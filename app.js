@@ -103,14 +103,14 @@ function render() {
   const [kicker, title] = meta[route];
   document.querySelector('#page-kicker').textContent = kicker;
   document.querySelector('#page-title').textContent = typeof title === 'function' ? title() : title;
-  document.querySelector('#quick-add').textContent = route === 'consultas' ? '＋ Nueva consulta' : '＋ Nueva consulta';
+  document.querySelector('#quick-add').textContent = '＋ Cargar reserva';
   const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, asistente: renderAssistant, conexiones: renderConnections };
   document.querySelector('#app').innerHTML = pages[route]();
   bindPage();
 }
 
 function bindGlobal() {
-  document.querySelector('#quick-add').addEventListener('click', openLeadModal);
+  document.querySelector('#quick-add').addEventListener('click', () => openReservationModal());
   document.querySelector('#import-calendar').addEventListener('click', () => document.querySelector('#calendar-file').click());
   document.querySelector('#calendar-file').addEventListener('change', importICS);
 }
@@ -145,7 +145,9 @@ function handleAction(action, id) {
     newLead: openLeadModal, newReservation: openReservationModal, newBlock: openBlockModal,
     convert: () => openReservationModal(state.leads.find(x => x.id === id)),
     whatsapp: () => openWhatsApp(id), deleteLead: () => deleteLead(id),
-    details: () => openReservationDetails(id), addTask: openTaskModal,
+    details: () => openReservationDetails(id), editReservation: () => openReservationModal(null, state.reservations.find(x => x.id === id)),
+    cancelReservation: () => openCancelReservationModal(id), deleteReservation: () => deleteReservation(id),
+    addTask: openTaskModal,
     addMovement: openMovementModal, addInventory: openInventoryModal,
     prevMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); },
     nextMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); },
@@ -164,10 +166,10 @@ function handleAction(action, id) {
 }
 
 function renderDashboard() {
-  const upcoming = [...state.reservations].filter(r => r.checkout >= todayISO()).sort((a,b) => a.checkin.localeCompare(b.checkin));
+  const upcoming = activeReservations().filter(r => r.checkout >= todayISO()).sort((a,b) => a.checkin.localeCompare(b.checkin));
   const next = upcoming[0];
   const pendingTasks = state.tasks.filter(t => !t.done).length;
-  const confirmedIncome = state.movements.filter(m => m.type === 'income').reduce((s,m) => s + Number(m.amount), 0);
+  const confirmedIncome = sumMovements('income');
   const activeLeads = state.leads.filter(l => l.status !== 'convertida').length;
   const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date()) / 86400000) : null;
   return `
@@ -177,7 +179,7 @@ function renderDashboard() {
         <h2>${next ? `Próxima llegada:<br>${esc(next.guest)}` : 'La villa está lista<br>para su próxima historia'}</h2>
         <p>${next ? `${dateLabel(next.checkin)} · ${next.guests} huéspedes · ${next.nights} noches. ${tasksForReservation(next.id).filter(t => !t.done).length} tareas pendientes.` : 'Todavía no hay una llegada próxima. Registrá una consulta o una reserva para poner el sistema en movimiento.'}</p>
         <div class="hero-actions">
-          <button class="secondary-button" data-action="newLead">Nueva consulta</button>
+          <button class="secondary-button" data-action="newLead">Registrar consulta manual</button>
           <button class="ghost-button" style="color:white;border-color:rgba(255,255,255,.4)" data-action="newReservation">Cargar reserva</button>
         </div>
       </div>
@@ -203,8 +205,8 @@ function renderDashboard() {
 function stat(label, value, note) { return `<article class="stat-card"><span class="eyebrow">${label}</span><strong>${value}</strong><small>${note}</small></article>`; }
 function empty(icon, title, note) { return `<div class="empty"><span class="empty-icon">${icon}</span><b>${title}</b><p>${note}</p></div>`; }
 function reservationRow(r) {
-  const balance = Number(r.total) - Number(r.paid || 0);
-  return `<div class="list-item"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes</p></div><div class="row-actions"><span class="pill"><span class="dot"></span>Confirmada</span><button data-action="details" data-id="${r.id}">${balance > 0 ? `Saldo ${money(balance)}` : 'Ver'}</button></div></div>`;
+  const cancelled = r.status === 'cancelled'; const balance = cancelled ? 0 : Number(r.total) - Number(r.paid || 0);
+  return `<div class="list-item ${cancelled?'cancelled-row':''}"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes</p></div><div class="row-actions"><span class="pill ${cancelled?'rust':''}"><span class="dot"></span>${cancelled?'Cancelada':'Confirmada'}</span><button data-action="details" data-id="${r.id}">${cancelled?'Ver historial':balance > 0 ? `Saldo ${money(balance)}` : 'Ver'}</button></div></div>`;
 }
 function taskMini(t) { return `<div class="list-item"><div class="list-item-main"><b>${esc(t.title)}</b><p>${esc(t.category)} · ${t.due ? dateLabel(t.due) : 'Sin fecha'}</p></div></div>`; }
 
@@ -212,7 +214,7 @@ function renderLeads() {
   const filters = [['todas','Todas'],['nueva','Nuevas'],['presupuesto','Presupuesto enviado'],['convertida','Convertidas']];
   const rows = state.leads.filter(l => leadFilter === 'todas' || l.status === leadFilter);
   return `<section class="card">
-    <div class="card-header"><div><span class="eyebrow">DE WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">Una consulta señala demanda; la fecha sólo se cierra cuando recibís la seña.</p></div><button class="primary-button" data-action="newLead">＋ Nueva consulta</button></div>
+    <div class="card-header"><div><span class="eyebrow">DE WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">La carga manual queda disponible hasta activar la conexión automática con Meta.</p></div><button class="primary-button" data-action="newLead">＋ Registrar consulta manual</button></div>
     <div class="filters">${filters.map(([k,l]) => `<button class="filter ${leadFilter===k?'active':''}" data-filter="${k}">${l}</button>`).join('')}</div>
     ${rows.length ? `<div class="list">${rows.map(leadRow).join('')}</div>` : empty('◌','No hay consultas en esta vista','Cargá la próxima persona que pregunte por fechas.')}
   </section>`;
@@ -233,11 +235,11 @@ function renderCalendar() {
     <div class="calendar-toolbar"><button class="icon-button" data-action="prevMonth">‹</button><h2>${label}</h2><button class="icon-button" data-action="nextMonth">›</button></div>
     <div class="calendar-grid">${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(x=>`<div class="weekday">${x}</div>`).join('')}${days.map(d=>calendarDay(d,month)).join('')}</div>
   </section>
-  <section class="content-grid"><div class="card"><h2>Reservas confirmadas</h2>${state.reservations.length?`<div class="list">${state.reservations.sort((a,b)=>a.checkin.localeCompare(b.checkin)).map(reservationRow).join('')}</div>`:empty('▦','Calendario despejado','No hay reservas cargadas.')}</div><div class="card"><h2>Cómo funciona</h2><p class="muted">Las consultas no bloquean fechas. Sólo una seña convierte la consulta en reserva confirmada. Podés tener salida a las 11:00 e ingreso a las 15:00 el mismo día.</p></div></section>`;
+  <section class="content-grid"><div class="card"><h2>Reservas confirmadas</h2>${activeReservations().length?`<div class="list">${activeReservations().sort((a,b)=>a.checkin.localeCompare(b.checkin)).map(reservationRow).join('')}</div>`:empty('▦','Calendario despejado','No hay reservas activas.')}${cancelledReservations().length?`<details class="history"><summary>${cancelledReservations().length} reserva${cancelledReservations().length===1?'':'s'} cancelada${cancelledReservations().length===1?'':'s'}</summary><div class="list">${cancelledReservations().map(reservationRow).join('')}</div></details>`:''}</div><div class="card"><h2>Calendarios conectados</h2><p class="muted">Airbnb puede sincronizar disponibilidad en ambos sentidos mediante dos enlaces iCal. La aplicación necesita un servidor de calendario para ofrecer su propio enlace; la importación actual todavía es una copia manual.</p><button class="secondary-button" data-route="conexiones" onclick="navigate('conexiones')">Ver conexiones</button></div></section>`;
 }
 function calendarDay(d, shownMonth) {
   const iso = localISO(d); const events = [];
-  state.reservations.forEach(r => { if (iso >= r.checkin && iso < r.checkout) events.push(`<div class="calendar-event">${esc(r.guest)}</div>`); });
+  activeReservations().forEach(r => { if (iso >= r.checkin && iso < r.checkout) events.push(`<div class="calendar-event">${esc(r.guest)}</div>`); });
   state.blocks.forEach(b => { if (iso >= b.start && iso <= b.end) events.push(`<div class="calendar-event blocked">Bloqueado</div>`); });
   const holiday = state.holidays.find(h => h.fecha === iso || h.date === iso); if (holiday) events.push(`<div class="calendar-event blocked">${esc(holiday.nombre || holiday.localName)}</div>`);
   return `<div class="day ${d.getMonth()!==shownMonth?'outside':''} ${iso===todayISO()?'today':''}"><span class="day-number">${d.getDate()}</span>${events.slice(0,3).join('')}</div>`;
@@ -257,10 +259,13 @@ function renderFinances() {
   const income = sumMovements('income'), expenses = sumMovements('expense'), balance = income-expenses;
   return `<section class="card"><div class="card-header"><div><span class="eyebrow">CONTROL SIMPLE</span><h2>Ingresos de la villa</h2><p class="muted">Empezamos por ingresos; los gastos pueden sumarse cuando lo necesites.</p></div><button class="primary-button" data-action="addMovement">＋ Registrar movimiento</button></div>
     <div class="finance-summary"><div class="money"><small>Ingresos</small><strong>${money(income)}</strong></div><div class="money expense"><small>Gastos</small><strong>${money(expenses)}</strong></div><div class="money balance"><small>Resultado</small><strong>${money(balance)}</strong></div></div>
-    ${state.movements.length?`<div class="list">${[...state.movements].reverse().map(m=>`<div class="list-item"><div><b>${esc(m.label)}</b><p class="muted">${dateLabel(m.date)} · ${m.type==='income'?'Ingreso':'Gasto'}</p></div><strong style="color:${m.type==='income'?'var(--pine)':'var(--rust)'}">${m.type==='income'?'+':'−'} ${money(m.amount)}</strong></div>`).join('')}</div>`:empty('$','Todavía no hay movimientos','El primer ingreso aparecerá cuando confirmes una reserva o lo cargues manualmente.')}
+    ${state.movements.length?`<div class="list">${[...state.movements].reverse().map(m=>`<div class="list-item"><div><b>${esc(m.label)}</b><p class="muted">${dateLabel(m.date)} · ${m.type==='income'?'Ingreso':m.type==='reversal'?'Anulación':'Gasto'}</p></div><strong style="color:${m.type==='income'?'var(--pine)':'var(--rust)'}">${m.type==='income'?'+':'−'} ${money(m.amount)}</strong></div>`).join('')}</div>`:empty('$','Todavía no hay movimientos','El primer ingreso aparecerá cuando confirmes una reserva o lo cargues manualmente.')}
   </section>`;
 }
-function sumMovements(type) { return state.movements.filter(m=>m.type===type).reduce((s,m)=>s+Number(m.amount),0); }
+function sumMovements(type) {
+  if (type === 'income') return state.movements.reduce((sum,m) => sum + (m.type==='income'?Number(m.amount):m.type==='reversal'?-Number(m.amount):0), 0);
+  return state.movements.filter(m=>m.type===type).reduce((s,m)=>s+Number(m.amount),0);
+}
 
 function renderInventory() {
   return `<section class="card"><div class="card-header"><div><span class="eyebrow">HAY · QUEDA POCO · FALTA</span><h2>Inventario esencial</h2></div><button class="primary-button" data-action="addInventory">＋ Agregar elemento</button></div><div class="inventory-grid">${state.inventory.map(i=>`<article class="inventory-item"><h3>${esc(i.name)}</h3><p class="muted">${esc(i.detail)}</p><button class="status-button status-${i.status}" data-inventory="${i.id}">${({hay:'Hay',poco:'Queda poco',falta:'Falta'})[i.status]}</button></article>`).join('')}</div></section>`;
@@ -418,24 +423,35 @@ function updateQuote(form) {
   if(!form.elements.nightly.value) form.elements.nightly.value=suggestion.nightly;
 }
 
-function openReservationModal(lead=null) {
-  openModal(lead ? 'Confirmar reserva con seña' : 'Cargar reserva confirmada', `<form id="reservation-form"><div class="form-grid">
-    ${field('Titular de la reserva','guest','text','Nombre y apellido',true,undefined,undefined,lead?.name||'')}${field('Teléfono','phone','tel','358…',false,undefined,undefined,lead?.phone||'')}
-    ${field('Ingreso','checkin','date','',true,undefined,undefined,lead?.checkin||'')}${field('Salida','checkout','date','',true,undefined,undefined,lead?.checkout||'')}
-    ${field('Cantidad de personas','guests','number','Máximo 5',true,'1','5',lead?.guests||'')}${selectField('Origen','channel',['WhatsApp','Facebook','Instagram','Airbnb'],null,lead?.channel||'WhatsApp')}
-    ${field('Precio total acordado','total','number','Importe total',true,undefined,undefined,lead ? suggestPrice(lead.checkin,lead.checkout,lead.nightly).total : '')}${field('Seña recibida','paid','number','50% del total',true)}
-    ${field('Depósito de garantía','guarantee','number','Opcional, lo definís vos')}${field('Patente','plate','text','Opcional')}
-    ${field('DNI del titular','guestDni','text','Dato opcional')}${field('Fecha de nacimiento','birthdate','date')}
-    ${field('Contacto de emergencia','emergencyPhone','tel','Dato opcional')}${field('Correo electrónico','email','email','Dato opcional')}
-    ${field('Ciudad y domicilio','address','text','Dato opcional')}${field('Acompañantes','companions','text','Nombres separados por coma')}
-    ${textareaField('Notas','notes','Datos importantes de la estadía')}
-    <label class="checkline field full"><input type="checkbox" name="depositConfirmed" required> Confirmo que recibí la seña y que estas fechas deben bloquearse.</label>
-  </div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Confirmar reserva</button></div></form>`);
+function openReservationModal(lead=null, existing=null) {
+  const source = existing || lead || {};
+  const suggestedTotal = lead ? suggestPrice(lead.checkin,lead.checkout,lead.nightly).total : '';
+  openModal(existing ? 'Editar reserva' : lead ? 'Confirmar reserva con seña' : 'Cargar reserva confirmada', `<form id="reservation-form"><div class="form-grid">
+    ${field('Titular de la reserva','guest','text','Nombre y apellido',true,undefined,undefined,existing?.guest||lead?.name||'')}${field('Teléfono','phone','tel','358…',false,undefined,undefined,source.phone||'')}
+    ${field('Ingreso','checkin','date','',true,undefined,undefined,source.checkin||'')}${field('Salida','checkout','date','',true,undefined,undefined,source.checkout||'')}
+    ${field('Cantidad de personas','guests','number','Máximo 5',true,'1','5',source.guests||'')}${selectField('Origen','channel',['WhatsApp','Facebook','Instagram','Airbnb','Calendario importado'],null,source.channel||'WhatsApp')}
+    ${field('Precio total acordado','total','number','Importe total',true,undefined,undefined,existing?.total||suggestedTotal)}${field('Seña recibida','paid','number','50% del total',true,undefined,undefined,existing?.paid||'')}
+    ${field('Depósito de garantía','guarantee','number','Opcional, lo definís vos',false,undefined,undefined,existing?.guarantee||'')}${field('Patente','plate','text','Opcional',false,undefined,undefined,existing?.plate||'')}
+    ${field('DNI del titular','guestDni','text','Dato opcional',false,undefined,undefined,existing?.guestDni||'')}${field('Fecha de nacimiento','birthdate','date','',false,undefined,undefined,existing?.birthdate||'')}
+    ${field('Contacto de emergencia','emergencyPhone','tel','Dato opcional',false,undefined,undefined,existing?.emergencyPhone||'')}${field('Correo electrónico','email','email','Dato opcional',false,undefined,undefined,existing?.email||'')}
+    ${field('Ciudad y domicilio','address','text','Dato opcional',false,undefined,undefined,existing?.address||'')}${field('Acompañantes','companions','text','Nombres separados por coma',false,undefined,undefined,existing?.companions||'')}
+    ${textareaField('Notas','notes','Datos importantes de la estadía',existing?.notes||'')}
+    ${existing?'':'<label class="checkline field full"><input type="checkbox" name="depositConfirmed" required> Confirmo que recibí la seña y que estas fechas deben bloquearse.</label>'}
+  </div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">${existing?'Guardar cambios':'Confirmar reserva'}</button></div></form>`);
   const form=document.querySelector('#reservation-form');
   form.elements.total.addEventListener('change', () => {
     if (!form.elements.paid.value) form.elements.paid.value = Math.round(Number(form.elements.total.value || 0) * .5);
   });
-  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.id=uid(); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout); data.receipt=nextReceipt(); data.created=todayISO(); state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,date:todayISO(),reservationId:data.id}); createReservationTasks(data); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada y tareas creadas'); closeModal(); navigate('calendario'); });
+  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout,existing?.id)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout);
+    if(existing){
+      const oldPaid=Number(existing.paid||0), delta=data.paid-oldPaid;
+      Object.assign(existing,data,{id:existing.id,receipt:existing.receipt,created:existing.created,status:existing.status});
+      if(delta>0)state.movements.push({id:uid(),type:'income',label:`Ajuste de pago · ${data.guest}`,amount:delta,date:todayISO(),reservationId:existing.id});
+      if(delta<0)state.movements.push({id:uid(),type:'reversal',label:`Ajuste de pago · ${data.guest}`,amount:Math.abs(delta),date:todayISO(),reservationId:existing.id});
+      tasksForReservation(existing.id).forEach(task=>task.due=data.checkin);
+      saveState('Reserva actualizada'); closeModal(); navigate('calendario'); return;
+    }
+    data.id=uid(); data.receipt=nextReceipt(); data.created=todayISO(); data.status='confirmed'; state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,date:todayISO(),reservationId:data.id}); createReservationTasks(data); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada y tareas creadas'); closeModal(); navigate('calendario'); });
   bindModal();
 }
 
@@ -454,9 +470,9 @@ function openInventoryModal() {
 }
 
 function openReservationDetails(id) {
-  const r=state.reservations.find(x=>x.id===id); if(!r)return; const balance=Number(r.total)-Number(r.paid||0);
-  openModal(`Reserva de ${esc(r.guest)}`, `<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total)}<br>Pagado ${money(r.paid)}<br><b>Saldo ${money(balance)}</b></p></div><div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions"><button class="ghost-button" data-action="openForm">Abrir formulario de huéspedes</button>${r.guestDni||r.address||r.emergencyPhone?`<button class="ghost-button danger" id="clear-private">Borrar datos sensibles</button>`:''}<button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}</div>`);
-  bindModal(); document.querySelector('#print-receipt').addEventListener('click',()=>printReceipt(r)); const clearPrivate=document.querySelector('#clear-private');if(clearPrivate)clearPrivate.addEventListener('click',()=>{['guestDni','birthdate','emergencyPhone','email','address','companions','plate'].forEach(k=>r[k]='');saveState('Datos sensibles eliminados');closeModal();render();}); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
+  const r=state.reservations.find(x=>x.id===id); if(!r)return; const cancelled=r.status==='cancelled'; const balance=cancelled?0:Number(r.total)-Number(r.paid||0);
+  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total original ${money(r.total)}<br>Ingreso vigente ${money(cancelled?0:r.paid)}<br><b>Saldo ${money(balance)}</b></p></div><div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button><button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
+  bindModal(); const print=document.querySelector('#print-receipt');if(print)print.addEventListener('click',()=>printReceipt(r)); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
 }
 
 function openModal(title, body) {
@@ -465,7 +481,7 @@ function openModal(title, body) {
 function bindModal(){document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));document.querySelectorAll('#modal-root [data-action]').forEach(b=>b.addEventListener('click',()=>handleAction(b.dataset.action,b.dataset.id)));}
 function closeModal(){document.querySelector('#modal-root').innerHTML='';}
 function field(label,name,type='text',placeholder='',required=false,min,max,value=''){return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" placeholder="${placeholder}" ${required?'required':''} ${min?`min="${min}"`:''} ${max?`max="${max}"`:''} value="${esc(value)}"></label>`;}
-function textareaField(label,name,placeholder=''){return `<label class="field full"><span>${label}</span><textarea name="${name}" placeholder="${placeholder}"></textarea></label>`;}
+function textareaField(label,name,placeholder='',value=''){return `<label class="field full"><span>${label}</span><textarea name="${name}" placeholder="${placeholder}">${esc(value)}</textarea></label>`;}
 function selectField(label,name,values,labels=null,selected=''){return `<label class="field"><span>${label}</span><select name="${name}">${values.map((v,i)=>`<option value="${v}" ${v===selected?'selected':''}>${labels?labels[i]:v}</option>`).join('')}</select></label>`;}
 
 function createReservationTasks(r) {
@@ -479,9 +495,36 @@ function createReservationTasks(r) {
   Object.entries(checklist).forEach(([category,titles])=>titles.forEach(title=>state.tasks.push({id:uid(),title,category,due:r.checkin,done:false,reservationId:r.id})));
 }
 function tasksForReservation(id){return state.tasks.filter(t=>t.reservationId===id);}
+function activeReservations(){return state.reservations.filter(r=>r.status!=='cancelled');}
+function cancelledReservations(){return state.reservations.filter(r=>r.status==='cancelled');}
+function reservationNetIncome(id){return state.movements.filter(m=>m.reservationId===id).reduce((sum,m)=>sum+(m.type==='income'?Number(m.amount):m.type==='reversal'?-Number(m.amount):0),0);}
 function toggleTask(id){const t=state.tasks.find(x=>x.id===id);if(t){t.done=!t.done;saveState();render();}}
 function cycleInventory(id){const item=state.inventory.find(x=>x.id===id);const cycle={hay:'poco',poco:'falta',falta:'hay'};item.status=cycle[item.status];saveState('Estado actualizado');render();}
 function deleteLead(id){state.leads=state.leads.filter(x=>x.id!==id);saveState('Consulta eliminada');render();}
+
+function openCancelReservationModal(id){
+  const reservation=state.reservations.find(r=>r.id===id);if(!reservation)return;
+  const amount=reservationNetIncome(id);
+  openModal('Cancelar reserva',`<div class="cancel-summary"><span class="cancel-icon">!</span><div><h3>${esc(reservation.guest)}</h3><p>${dateLabel(reservation.checkin)} → ${dateLabel(reservation.checkout)}</p></div></div><div class="quote-box"><b>Al confirmar:</b><p>Se liberarán las fechas, se eliminarán las tareas pendientes y se anularán ${money(amount)} de los ingresos registrados. La reserva quedará visible en el historial.</p></div><div class="form-actions"><button class="ghost-button" data-close>Volver</button><button class="primary-button danger-solid" id="confirm-cancel-reservation">Sí, cancelar reserva</button></div>`);
+  bindModal();document.querySelector('#confirm-cancel-reservation').addEventListener('click',()=>cancelReservation(id));
+}
+
+function cancelReservation(id){
+  const reservation=state.reservations.find(r=>r.id===id);if(!reservation||reservation.status==='cancelled')return;
+  const amount=reservationNetIncome(id);
+  if(amount>0)state.movements.push({id:uid(),type:'reversal',label:`Anulación · ${reservation.guest}`,amount,date:todayISO(),reservationId:id});
+  reservation.status='cancelled';reservation.cancelledAt=new Date().toISOString();reservation.paid=0;
+  state.tasks=state.tasks.filter(task=>task.reservationId!==id);
+  saveState('Reserva cancelada: fechas e ingresos liberados');closeModal();navigate('calendario');
+}
+
+function deleteReservation(id){
+  const reservation=state.reservations.find(r=>r.id===id);if(!reservation||reservation.status!=='cancelled')return;
+  state.reservations=state.reservations.filter(r=>r.id!==id);
+  state.tasks=state.tasks.filter(task=>task.reservationId!==id);
+  state.movements=state.movements.filter(movement=>movement.reservationId!==id);
+  saveState('Historial de reserva eliminado');closeModal();navigate('calendario');
+}
 
 function suggestPrice(checkin, checkout, override) {
   const nights=nightCount(checkin,checkout); let nightly=Number(override)||state.settings.regularNight; let reason='Tarifa base para estadías de dos noches o más.';
@@ -499,7 +542,7 @@ function validDates(a,b){return a&&b&&b>a&&nightCount(a,b)>0;}
 function datesBetween(a,b){const dates=[];for(let d=new Date(`${a}T12:00:00`),end=new Date(`${b}T12:00:00`);d<end;d.setDate(d.getDate()+1))dates.push(localISO(d));return dates;}
 function localISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function rangesOverlap(a1,a2,b1,b2){return a1<b2&&b1<a2;}
-function checkAvailability(checkin,checkout){if(!checkin||!checkout)return true;return !state.reservations.some(r=>rangesOverlap(checkin,checkout,r.checkin,r.checkout))&&!state.blocks.some(b=>rangesOverlap(checkin,checkout,b.start,plusDay(b.end)));}
+function checkAvailability(checkin,checkout,excludeId=null){if(!checkin||!checkout)return true;return !activeReservations().some(r=>r.id!==excludeId&&rangesOverlap(checkin,checkout,r.checkin,r.checkout))&&!state.blocks.some(b=>rangesOverlap(checkin,checkout,b.start,plusDay(b.end)));}
 function plusDay(iso){const d=new Date(`${iso}T12:00:00`);d.setDate(d.getDate()+1);return localISO(d);}
 function nextReceipt(){return `VIF-${String(state.reservations.length+1).padStart(4,'0')}`;}
 

@@ -50,6 +50,8 @@ h3 { font-size: 16px; margin-bottom: 6px; }
 .ghost-button { color: var(--pine); background: transparent; border: 1px solid var(--line); }
 .icon-button { width: 42px; height: 42px; padding: 0; color: var(--pine); background: var(--paper); border: 1px solid var(--line); font-size: 20px; }
 .danger { color: #8a302a; }
+.danger-solid { color: white; background: #923f34; }
+.danger-solid:hover { background: #733027; }
 
 #app { padding: 32px clamp(22px, 4vw, 58px) 90px; max-width: 1540px; margin: auto; }
 .hero { min-height: 300px; border-radius: 28px; overflow: hidden; position: relative; padding: 38px; color: white; display: flex; align-items: flex-end; background: linear-gradient(90deg, rgba(19,46,33,.92), rgba(19,46,33,.35)), url('assets/jardin-entrada.png') center 55%/cover; box-shadow: var(--shadow); }
@@ -74,6 +76,7 @@ h3 { font-size: 16px; margin-bottom: 6px; }
 .list-item { padding: 15px; border: 1px solid var(--line); border-radius: 15px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff; }
 .list-item-main { min-width: 0; }
 .list-item-main p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.cancelled-row { opacity: .72; background: #faf5f1; }
 .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 6px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; background: var(--sage); color: var(--pine); }
 .pill.warn { background: #f4e6c9; color: #775219; }
 .pill.rust { background: #f1dcd2; color: #7e3d27; }
@@ -178,6 +181,13 @@ textarea { min-height: 95px; resize: vertical; }
 .form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
 .quote-box { padding: 17px; margin-top: 16px; background: var(--sage); border-radius: 14px; }
 .quote-box strong { color: var(--pine); font-size: 22px; }
+.cancelled-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; padding: 14px 16px; color: #7e3d27; background: #f1dcd2; border-radius: 13px; }
+.cancelled-banner span { font-size: 12px; }
+.cancel-summary { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+.cancel-summary h3, .cancel-summary p { margin: 0; }
+.cancel-icon { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: white; background: var(--rust); font-weight: 800; }
+.history { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.history summary { margin-bottom: 12px; color: var(--rust); cursor: pointer; font-weight: 700; }
 .checkline { display: flex; align-items: center; gap: 9px; }
 .checkline input { width: auto; }
 .toast { position: fixed; right: 22px; bottom: 22px; z-index: 30; color: white; background: var(--pine-dark); border-radius: 12px; padding: 13px 17px; box-shadow: var(--shadow); animation: toast-in .25s ease; }
