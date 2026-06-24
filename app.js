@@ -12,6 +12,7 @@ const defaultState = {
   tasks: [],
   movements: [],
   holidays: [],
+  photoLibrary: [],
   inventory: [
     { id: uid(), name: 'Vajilla', detail: 'Platos, vasos y cubiertos', status: 'hay' },
     { id: uid(), name: 'Acolchados', detail: 'Para las cuatro camas', status: 'hay' },
@@ -45,8 +46,10 @@ function loadState() {
   } catch { return structuredClone(defaultState); }
 }
 function saveState(message) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch { toast('No queda espacio para guardar más imágenes. Eliminá alguna foto agregada.'); return false; }
   if (message) toast(message);
+  return true;
 }
 
 const navItems = [
@@ -116,12 +119,21 @@ function bindPage() {
   document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { leadFilter = button.dataset.filter; render(); }));
   document.querySelectorAll('[data-task]').forEach(input => input.addEventListener('change', () => toggleTask(input.dataset.task)));
   document.querySelectorAll('[data-inventory]').forEach(button => button.addEventListener('click', () => cycleInventory(button.dataset.inventory)));
-  document.querySelectorAll('[data-photo]').forEach(button => button.addEventListener('click', () => { selectedPhoto = button.dataset.photo; render(); }));
+  document.querySelectorAll('[data-photo]').forEach(button => button.addEventListener('click', () => {
+    const photo = allPhotos().find(item => item.id === button.dataset.photo);
+    if (photo) selectedPhoto = photo.src;
+    render();
+  }));
   const chatForm = document.querySelector('#chat-form');
   if (chatForm) chatForm.addEventListener('submit', submitChat);
   document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => askAssistant(button.dataset.prompt)));
   const postType = document.querySelector('#post-type');
   if (postType) postType.addEventListener('change', render);
+  const visualUpload = document.querySelector('#visual-upload');
+  if (visualUpload) visualUpload.addEventListener('change', handleVisualUpload);
+  document.querySelectorAll('[data-delete-photo]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation(); deleteUploadedPhoto(button.dataset.deletePhoto);
+  }));
   const connectionsForm = document.querySelector('#connections-form');
   if (connectionsForm) connectionsForm.addEventListener('submit', saveConnections);
   const backupFile = document.querySelector('#backup-file');
@@ -137,7 +149,10 @@ function handleAction(action, id) {
     addMovement: openMovementModal, addInventory: openInventoryModal,
     prevMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); },
     nextMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); },
-    copyPost: copyPost, importCalendar: () => document.querySelector('#calendar-file').click(),
+    copyPost: copyPost, sharePost: sharePost, downloadPhoto: downloadSelectedPhoto,
+    addVisuals: () => document.querySelector('#visual-upload')?.click(),
+    openInstagram: () => window.open('https://www.instagram.com/', '_blank'),
+    importCalendar: () => document.querySelector('#calendar-file').click(),
     openForm: () => window.open(state.settings.formUrl, '_blank'),
     openMeta: () => window.open(state.settings.metaUrl || 'https://business.facebook.com/latest/inbox/all', '_blank'),
     openFacebook: () => openConfiguredLink('facebookUrl', 'Facebook'),
@@ -251,15 +266,23 @@ function renderInventory() {
   return `<section class="card"><div class="card-header"><div><span class="eyebrow">HAY · QUEDA POCO · FALTA</span><h2>Inventario esencial</h2></div><button class="primary-button" data-action="addInventory">＋ Agregar elemento</button></div><div class="inventory-grid">${state.inventory.map(i=>`<article class="inventory-item"><h3>${esc(i.name)}</h3><p class="muted">${esc(i.detail)}</p><button class="status-button status-${i.status}" data-inventory="${i.id}">${({hay:'Hay',poco:'Queda poco',falta:'Falta'})[i.status]}</button></article>`).join('')}</div></section>`;
 }
 
-const photos = [
+const builtInPhotos = [
   ['assets/jardin-entrada.png','El jardín'],['assets/jardin-flores.png','Flores'],['assets/loft.png','El loft'],
   ['assets/altillo.png','Altillo'],['assets/asador.png','Asador'],['assets/galeria.png','Galería'],['assets/cartel.png','Historia'],['assets/frente.png','Frente']
 ];
+function allPhotos() {
+  return [
+    ...builtInPhotos.map(([src,label]) => ({ id: src, src, label, uploaded: false })),
+    ...(state.photoLibrary || []).map(photo => ({ ...photo, uploaded: true }))
+  ];
+}
 function renderContent() {
   const type = document.querySelector('#post-type')?.value || 'escapada';
   const copy = postCopy(type);
-  return `<section class="generator"><div class="card"><span class="eyebrow">ELEGANTE, CÁLIDO Y SERRANO</span><h2>Elegí una imagen</h2><div class="photo-grid">${photos.map(([src,label])=>`<button class="photo-option ${selectedPhoto===src?'selected':''}" data-photo="${src}" title="${label}"><img src="${src}" alt="${label}"></button>`).join('')}</div></div>
-  <div class="card"><div class="card-header"><div><span class="eyebrow">BORRADOR PARA REDES</span><h2>Nueva publicación</h2></div><select id="post-type" style="width:auto"><option value="escapada" ${type==='escapada'?'selected':''}>Escapada serrana</option><option value="disponibilidad" ${type==='disponibilidad'?'selected':''}>Fechas disponibles</option><option value="historia" ${type==='historia'?'selected':''}>Historia de la casa</option></select></div><div class="post-preview"><img src="${selectedPhoto}" alt="Vista previa"><div class="post-copy" id="post-copy">${esc(copy)}</div></div><div class="form-actions"><button class="primary-button" data-action="copyPost">Copiar texto</button></div></div></section>`;
+  const photos = allPhotos();
+  if (!photos.some(photo => photo.src === selectedPhoto)) selectedPhoto = photos[0].src;
+  return `<section class="generator"><div class="card"><div class="card-header"><div><span class="eyebrow">ELEGANTE, CÁLIDO Y SERRANO</span><h2>Biblioteca visual</h2><p class="muted">Elegí una foto existente o agregá material nuevo.</p></div><button class="secondary-button" data-action="addVisuals">＋ Agregar fotos</button></div><input type="file" id="visual-upload" accept="image/jpeg,image/png,image/webp" multiple hidden><div class="photo-grid">${photos.map(photo=>`<div class="photo-tile"><button class="photo-option ${selectedPhoto===photo.src?'selected':''}" data-photo="${photo.id}" title="${esc(photo.label)}"><img src="${photo.src}" alt="${esc(photo.label)}"></button>${photo.uploaded?`<button class="photo-delete" data-delete-photo="${photo.id}" aria-label="Eliminar ${esc(photo.label)}">×</button>`:''}</div>`).join('')}</div><p class="library-count">${photos.length} imágenes · Las fotos agregadas quedan guardadas en este dispositivo.</p></div>
+  <div class="card"><div class="card-header"><div><span class="eyebrow">BORRADOR PARA REDES</span><h2>Nueva publicación</h2></div><select id="post-type" style="width:auto"><option value="escapada" ${type==='escapada'?'selected':''}>Escapada serrana</option><option value="disponibilidad" ${type==='disponibilidad'?'selected':''}>Fechas disponibles</option><option value="historia" ${type==='historia'?'selected':''}>Historia de la casa</option></select></div><div class="post-preview"><img src="${selectedPhoto}" alt="Vista previa"><div class="post-copy" id="post-copy">${esc(copy)}</div></div><div class="share-tip"><span>↗</span><p><b>Desde el celular</b><br>Compartí la imagen y elegí Instagram en el menú del dispositivo. El texto también quedará copiado para pegarlo como descripción.</p></div><div class="form-actions post-actions"><button class="ghost-button" data-action="copyPost">Copiar texto</button><button class="ghost-button" data-action="downloadPhoto">Guardar imagen</button><button class="primary-button" data-action="sharePost">Compartir publicación</button></div></div></section>`;
 }
 function postCopy(type) {
   const variants = {
@@ -483,6 +506,84 @@ function nextReceipt(){return `VIF-${String(state.reservations.length+1).padStar
 function openWhatsApp(id){const l=state.leads.find(x=>x.id===id);if(!l)return;const q=suggestPrice(l.checkin,l.checkout,l.nightly);const text=`Hola ${l.name}, ¿cómo estás? Gracias por comunicarte con Villa il Fanale. Tenemos disponibilidad del ${dateLabel(l.checkin)} al ${dateLabel(l.checkout)} para ${l.guests} persona${l.guests==1?'':'s'}. El valor es de ${money(q.nightly)} por noche, con un total de ${money(q.total)}. La reserva queda confirmada al recibir una seña del 50%; el saldo se abona al ingresar. El check-in es a las ${state.settings.checkin} y el check-out a las ${state.settings.checkout}. La casa no admite mascotas y no incluye ropa blanca. Si te parece bien, avanzamos con la reserva.`;l.status='presupuesto';saveState();const phone=normalizeWhatsApp(l.phone);window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`,'_blank');render();}
 function normalizeWhatsApp(phone){let digits=(phone||'').replace(/\D/g,'').replace(/^0/,'');if(!digits)return'';if(digits.startsWith('54'))return digits;return `549${digits}`;}
 function copyPost(){navigator.clipboard?.writeText(document.querySelector('#post-copy').innerText);toast('Publicación copiada');}
+
+async function handleVisualUpload(event) {
+  const incoming = [...event.target.files];
+  if (!incoming.length) return;
+  const available = Math.max(0, 12 - (state.photoLibrary || []).length);
+  if (!available) return toast('La biblioteca admite hasta 12 fotos agregadas. Eliminá alguna para continuar.');
+  const files = incoming.slice(0, available);
+  toast(`Preparando ${files.length} imagen${files.length===1?'':'es'}…`);
+  const prepared = [];
+  for (const file of files) {
+    try {
+      const src = await compressImage(file);
+      prepared.push({ id: uid(), src, label: file.name.replace(/\.[^.]+$/, '') || 'Foto agregada', added: todayISO() });
+    } catch { /* ignora archivos que el navegador no pueda leer */ }
+  }
+  state.photoLibrary = [...(state.photoLibrary || []), ...prepared];
+  if (prepared.length) selectedPhoto = prepared.at(-1).src;
+  if (saveState(`${prepared.length} imagen${prepared.length===1?' agregada':'es agregadas'}`)) render();
+  event.target.value = '';
+}
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image(); const url = URL.createObjectURL(file);
+    image.onload = () => {
+      const max = 1400, scale = Math.min(1, max / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fffdf8'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', .72));
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+    image.src = url;
+  });
+}
+
+function deleteUploadedPhoto(id) {
+  const photo = (state.photoLibrary || []).find(item => item.id === id);
+  state.photoLibrary = (state.photoLibrary || []).filter(item => item.id !== id);
+  if (photo?.src === selectedPhoto) selectedPhoto = builtInPhotos[0][0];
+  saveState('Imagen eliminada de este dispositivo'); render();
+}
+
+async function selectedPhotoFile() {
+  const response = await fetch(selectedPhoto);
+  const blob = await response.blob();
+  return new File([blob], `villa-il-fanale-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+}
+
+async function sharePost() {
+  const text = document.querySelector('#post-copy').innerText;
+  try { await navigator.clipboard.writeText(text); } catch { /* el menú compartir conserva el texto cuando es compatible */ }
+  try {
+    const file = await selectedPhotoFile();
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: 'Villa il Fanale', text, files: [file] });
+      toast('Publicación compartida'); return;
+    }
+    downloadFile(file);
+    toast('Imagen guardada y texto copiado. Ya podés abrir Instagram y crear la publicación.');
+  } catch (error) {
+    if (error?.name !== 'AbortError') toast('No se pudo abrir el menú. Usá “Guardar imagen” y “Copiar texto”.');
+  }
+}
+
+async function downloadSelectedPhoto() {
+  try { downloadFile(await selectedPhotoFile()); toast('Imagen guardada'); }
+  catch { toast('No se pudo guardar esta imagen'); }
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file); const link = document.createElement('a');
+  link.href = url; link.download = file.name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function submitChat(event){event.preventDefault();const input=event.currentTarget.elements.message;const text=input.value.trim();if(!text)return;input.value='';askAssistant(text);}
 function askAssistant(text){state.messages.push({role:'user',text});state.messages.push({role:'assistant',text:assistantReply(text)});saveState();render();setTimeout(()=>{const box=document.querySelector('#messages');if(box)box.scrollTop=box.scrollHeight;},0);}
