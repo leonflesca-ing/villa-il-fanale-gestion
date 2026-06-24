@@ -1,4 +1,4 @@
 window.VILLA_CONFIG = {
   bookingEndpoint: '',
-  whatsapp: '54935848495024'
+  whatsapp: '5493584849524'
 };

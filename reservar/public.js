@@ -6,10 +6,18 @@ const today = new Date().toISOString().slice(0, 10);
 let siteContent = {
   heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
   heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
+  heroImage: '../assets/jardin-entrada.png', introEyebrow: 'EL ENCANTO DE LO SIMPLE',
   introTitle: 'Un refugio serrano', introSubtitle: 'para volver al ritmo propio.',
   introCopyOne: 'Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.',
   introCopyTwo: 'Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.',
-  featureImage: '../assets/loft.png', regularNight: 60000, highNight: 65000, singleNight: 100000
+  featureImage: '../assets/loft.png', featureCaptionSmall: 'El corazón de la casa', featureCaption: 'Un único espacio, muchas maneras de habitarlo.',
+  spacesEyebrow: 'RECORRÉ VILLA IL FANALE', spacesTitle: 'Rincones que invitan', spacesSubtitle: 'a quedarse.', spacesDescription: 'La casa fue pensada para una estadía independiente y tranquila: cocina equipada, espacios amplios y un jardín para disfrutar la vida serrana.',
+  gallery1Image: '../assets/jardin-flores.png', gallery1Caption: 'Jardín', gallery2Image: '../assets/altillo.png', gallery2Caption: 'Altillo matrimonial', gallery3Image: '../assets/asador.png', gallery3Caption: 'Asador', gallery4Image: '../assets/galeria.png', gallery4Caption: 'Galería', gallery5Image: '../assets/rincon.png', gallery5Caption: 'Rincones con historia',
+  detailsImage: '../assets/cartel.png', detailsEyebrow: 'TODO LO NECESARIO', detailsTitle: 'Preparada para', detailsSubtitle: 'disfrutarla.',
+  amenity1Title: 'Hasta 5 personas', amenity1Description: 'Una cama matrimonial y tres individuales.', amenity2Title: 'Cocina equipada', amenity2Description: 'Cocina a gas, heladera, microondas y vajilla completa.', amenity3Title: 'Parrilla y galería', amenity3Description: 'Espacios exteriores para compartir y descansar.', amenity4Title: 'Jardín arbolado', amenity4Description: 'Sombra, flores y tranquilidad serrana.', amenity5Title: 'Ventilación', amenity5Description: 'Ventilador de techo y ventilador portátil.', amenity6Title: 'Zona semicéntrica', amenity6Description: 'Cercana al pueblo, en un entorno tranquilo.',
+  rulesEyebrow: 'ANTES DE VENIR', rulesTitle: 'Información clara,', rulesSubtitle: 'estadías tranquilas.', rule1Value: '15:00', rule1Title: 'Ingreso', rule1Description: 'Check-in desde las 15 h, coordinado personalmente.', rule2Value: '11:00', rule2Title: 'Salida', rule2Description: 'Check-out hasta las 11 h.', rule3Value: '2+', rule3Title: 'Noches', rule3Description: 'Estadía mínima habitual de dos noches.', rule4Value: '50%', rule4Title: 'Seña', rule4Description: 'La reserva se confirma al recibir el 50%.', importantText: 'No se admiten mascotas · No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.',
+  bookingEyebrow: 'TU PRÓXIMA ESCAPADA', bookingTitle: 'Consultá tus fechas.', bookingDescription: 'Completá los datos básicos. La solicitud no bloquea el calendario: te responderemos con disponibilidad y valor definitivo. La reserva queda confirmada únicamente con la seña.', bookingImage: '../assets/frente.png', footerLocation: 'Alpa Corral · Córdoba · Argentina',
+  regularNight: 60000, highNight: 65000, singleNight: 100000
 };
 
 loadSiteContent();
@@ -80,11 +88,20 @@ async function loadSiteContent() {
   } catch { /* conserva el contenido incluido en la página */ }
   const values = {
     'hero-eyebrow': siteContent.heroEyebrow, 'hero-title': siteContent.heroTitle, 'hero-subtitle': siteContent.heroSubtitle,
-    'hero-description': siteContent.heroDescription, 'intro-title': siteContent.introTitle, 'intro-subtitle': siteContent.introSubtitle,
-    'intro-copy-one': siteContent.introCopyOne, 'intro-copy-two': siteContent.introCopyTwo
+    'hero-description': siteContent.heroDescription, 'intro-eyebrow': siteContent.introEyebrow, 'intro-title': siteContent.introTitle, 'intro-subtitle': siteContent.introSubtitle,
+    'intro-copy-one': siteContent.introCopyOne, 'intro-copy-two': siteContent.introCopyTwo, 'feature-caption-small': siteContent.featureCaptionSmall, 'feature-caption': siteContent.featureCaption,
+    'spaces-eyebrow': siteContent.spacesEyebrow, 'spaces-title': siteContent.spacesTitle, 'spaces-subtitle': siteContent.spacesSubtitle, 'spaces-description': siteContent.spacesDescription,
+    'gallery-1-caption': siteContent.gallery1Caption, 'gallery-2-caption': siteContent.gallery2Caption, 'gallery-3-caption': siteContent.gallery3Caption, 'gallery-4-caption': siteContent.gallery4Caption, 'gallery-5-caption': siteContent.gallery5Caption,
+    'details-eyebrow': siteContent.detailsEyebrow, 'details-title': siteContent.detailsTitle, 'details-subtitle': siteContent.detailsSubtitle,
+    'amenity-1-title': siteContent.amenity1Title, 'amenity-1-description': siteContent.amenity1Description, 'amenity-2-title': siteContent.amenity2Title, 'amenity-2-description': siteContent.amenity2Description, 'amenity-3-title': siteContent.amenity3Title, 'amenity-3-description': siteContent.amenity3Description, 'amenity-4-title': siteContent.amenity4Title, 'amenity-4-description': siteContent.amenity4Description, 'amenity-5-title': siteContent.amenity5Title, 'amenity-5-description': siteContent.amenity5Description, 'amenity-6-title': siteContent.amenity6Title, 'amenity-6-description': siteContent.amenity6Description,
+    'rules-eyebrow': siteContent.rulesEyebrow, 'rules-title': siteContent.rulesTitle, 'rules-subtitle': siteContent.rulesSubtitle,
+    'rule-1-value': siteContent.rule1Value, 'rule-1-title': siteContent.rule1Title, 'rule-1-description': siteContent.rule1Description, 'rule-2-value': siteContent.rule2Value, 'rule-2-title': siteContent.rule2Title, 'rule-2-description': siteContent.rule2Description, 'rule-3-value': siteContent.rule3Value, 'rule-3-title': siteContent.rule3Title, 'rule-3-description': siteContent.rule3Description, 'rule-4-value': siteContent.rule4Value, 'rule-4-title': siteContent.rule4Title, 'rule-4-description': siteContent.rule4Description, 'important-text': siteContent.importantText,
+    'booking-eyebrow': siteContent.bookingEyebrow, 'booking-title': siteContent.bookingTitle, 'booking-description': siteContent.bookingDescription, 'footer-location': siteContent.footerLocation
   };
   Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element && value) element.textContent = value; });
-  if (siteContent.featureImage) document.querySelector('#feature-image').src = siteContent.featureImage;
+  const images = { 'feature-image':siteContent.featureImage, 'gallery-1-image':siteContent.gallery1Image, 'gallery-2-image':siteContent.gallery2Image, 'gallery-3-image':siteContent.gallery3Image, 'gallery-4-image':siteContent.gallery4Image, 'gallery-5-image':siteContent.gallery5Image, 'details-image':siteContent.detailsImage, 'booking-image':siteContent.bookingImage };
+  Object.entries(images).forEach(([id,src]) => { const image=document.getElementById(id); if(image&&src) image.src=src; });
+  if (siteContent.heroImage) document.querySelector('.public-hero').style.backgroundImage = `url("${siteContent.heroImage.replace(/"/g,'')}")`;
   document.querySelector('#public-rate').textContent = money(Number(siteContent.regularNight));
   updateEstimate();
 }

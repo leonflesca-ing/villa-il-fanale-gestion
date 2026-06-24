@@ -19,10 +19,17 @@ const defaultState = {
   publicContent: {
     heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
     heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
-    introTitle: 'Un refugio serrano', introSubtitle: 'para volver al ritmo propio.',
+    heroImage: '../assets/jardin-entrada.png', introEyebrow: 'EL ENCANTO DE LO SIMPLE', introTitle: 'Un refugio serrano', introSubtitle: 'para volver al ritmo propio.',
     introCopyOne: 'Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.',
     introCopyTwo: 'Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.',
-    featureImage: '../assets/loft.png', regularNight: 60000, highNight: 65000, singleNight: 100000
+    featureImage: '../assets/loft.png', featureCaptionSmall: 'El corazón de la casa', featureCaption: 'Un único espacio, muchas maneras de habitarlo.',
+    spacesEyebrow: 'RECORRÉ VILLA IL FANALE', spacesTitle: 'Rincones que invitan', spacesSubtitle: 'a quedarse.', spacesDescription: 'La casa fue pensada para una estadía independiente y tranquila: cocina equipada, espacios amplios y un jardín para disfrutar la vida serrana.',
+    gallery1Image: '../assets/jardin-flores.png', gallery1Caption: 'Jardín', gallery2Image: '../assets/altillo.png', gallery2Caption: 'Altillo matrimonial', gallery3Image: '../assets/asador.png', gallery3Caption: 'Asador', gallery4Image: '../assets/galeria.png', gallery4Caption: 'Galería', gallery5Image: '../assets/rincon.png', gallery5Caption: 'Rincones con historia',
+    detailsImage: '../assets/cartel.png', detailsEyebrow: 'TODO LO NECESARIO', detailsTitle: 'Preparada para', detailsSubtitle: 'disfrutarla.',
+    amenity1Title: 'Hasta 5 personas', amenity1Description: 'Una cama matrimonial y tres individuales.', amenity2Title: 'Cocina equipada', amenity2Description: 'Cocina a gas, heladera, microondas y vajilla completa.', amenity3Title: 'Parrilla y galería', amenity3Description: 'Espacios exteriores para compartir y descansar.', amenity4Title: 'Jardín arbolado', amenity4Description: 'Sombra, flores y tranquilidad serrana.', amenity5Title: 'Ventilación', amenity5Description: 'Ventilador de techo y ventilador portátil.', amenity6Title: 'Zona semicéntrica', amenity6Description: 'Cercana al pueblo, en un entorno tranquilo.',
+    rulesEyebrow: 'ANTES DE VENIR', rulesTitle: 'Información clara,', rulesSubtitle: 'estadías tranquilas.', rule1Value: '15:00', rule1Title: 'Ingreso', rule1Description: 'Check-in desde las 15 h, coordinado personalmente.', rule2Value: '11:00', rule2Title: 'Salida', rule2Description: 'Check-out hasta las 11 h.', rule3Value: '2+', rule3Title: 'Noches', rule3Description: 'Estadía mínima habitual de dos noches.', rule4Value: '50%', rule4Title: 'Seña', rule4Description: 'La reserva se confirma al recibir el 50%.', importantText: 'No se admiten mascotas · No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.',
+    bookingEyebrow: 'TU PRÓXIMA ESCAPADA', bookingTitle: 'Consultá tus fechas.', bookingDescription: 'Completá los datos básicos. La solicitud no bloquea el calendario: te responderemos con disponibilidad y valor definitivo. La reserva queda confirmada únicamente con la seña.', bookingImage: '../assets/frente.png', footerLocation: 'Alpa Corral · Córdoba · Argentina',
+    regularNight: 60000, highNight: 65000, singleNight: 100000
   },
   inventory: [
     { id: uid(), name: 'Vajilla', detail: 'Platos, vasos y cubiertos', status: 'hay' },
@@ -50,7 +57,7 @@ let calendarCursor = new Date();
 let leadFilter = 'todas';
 let selectedPhoto = 'assets/jardin-entrada.png';
 let installPrompt = null;
-let pendingFeatureImage = null;
+let pendingPublicImages = {};
 
 function loadState() {
   try {
@@ -180,8 +187,8 @@ function bindPage() {
   if (connectionsForm) connectionsForm.addEventListener('submit', saveConnections);
   const publicEditorForm = document.querySelector('#public-editor-form');
   if (publicEditorForm) publicEditorForm.addEventListener('submit', savePublicDraft);
-  const featureImageUpload = document.querySelector('#feature-image-upload');
-  if (featureImageUpload) featureImageUpload.addEventListener('change', handleFeatureImageSelected);
+  document.querySelectorAll('[data-image-slot]').forEach(button => button.addEventListener('click', () => document.querySelector(`[data-image-input="${button.dataset.imageSlot}"]`)?.click()));
+  document.querySelectorAll('[data-image-input]').forEach(input => input.addEventListener('change', () => handlePublicImageSelected(input)));
   const backupFile = document.querySelector('#backup-file');
   if (backupFile) backupFile.addEventListener('change', importBackup);
 }
@@ -209,7 +216,7 @@ function handleAction(action, id) {
     syncPublicRequests: () => syncPublicRequests(false),
     syncAirbnb: syncAirbnbCalendar, installApp: installApplication,
     exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click(),
-    publishPublicPage: publishPublicPage, uploadFeatureImage: () => document.querySelector('#feature-image-upload')?.click(),
+    publishPublicPage: publishPublicPage,
     previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin
   };
   actions[action]?.();
@@ -344,33 +351,58 @@ function renderContent() {
 
 function renderPublicEditor() {
   const content = state.publicContent || defaultState.publicContent;
-  const previewImage = content.featureImage?.startsWith('../') ? content.featureImage.slice(3) : content.featureImage;
   return `<section class="editor-intro card"><div><span class="eyebrow">EDITOR DEL SITIO</span><h2>Tu página, sin tocar código</h2><p class="muted">Modificá el contenido, guardá un borrador y publicalo cuando estés conforme. Los visitantes sólo ven la última versión publicada.</p></div><div class="editor-status"><span class="dot"></span><div><b>Acceso verificado</b><small>Cuenta ${GITHUB_OWNER}</small></div></div></section>
   <form id="public-editor-form" class="page-editor">
-    <div class="card editor-sidebar"><span class="eyebrow">SECCIONES</span><h3>Portada y presentación</h3><p class="muted">Esta primera versión permite editar lo más importante. Después podemos sumar servicios, normas y cada fotografía de la galería.</p><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
+    <div class="card editor-sidebar"><span class="eyebrow">EDITOR COMPLETO</span><h3>Todos los contenidos</h3><p class="muted">Podés cambiar los textos, precios y las nueve fotografías del sitio. Guardá primero un borrador y publicá sólo cuando estés conforme.</p><a href="#editor-portada">Portada</a><a href="#editor-historia">Historia</a><a href="#editor-galeria">Galería</a><a href="#editor-servicios">Servicios</a><a href="#editor-normas">Normas</a><a href="#editor-reservas">Reservas</a><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
     <div class="editor-fields">
-      <section class="card"><div class="card-header"><div><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></div></div><div class="form-grid">
+      <section class="card" id="editor-portada"><div class="card-header"><div><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></div></div><div class="form-grid">
         ${field('Texto superior','heroEyebrow','text','ALPA CORRAL · CÓRDOBA',true,undefined,undefined,content.heroEyebrow)}
         ${field('Título principal','heroTitle','text','Una casa con alma',true,undefined,undefined,content.heroTitle)}
         ${field('Título destacado','heroSubtitle','text','de sierra.',true,undefined,undefined,content.heroSubtitle)}
-        <label class="field full"><span>Descripción breve</span><textarea name="heroDescription" rows="3" required>${esc(content.heroDescription)}</textarea></label>
-      </div></section>
-      <section class="card"><div class="card-header"><div><span class="eyebrow">HISTORIA</span><h2>Presentación de la villa</h2></div></div><div class="form-grid">
+        ${editorTextArea('Descripción breve','heroDescription',content.heroDescription,3)}
+      </div>${editorImage('heroImage','Imagen de portada',content.heroImage)}</section>
+      <section class="card" id="editor-historia"><div class="card-header"><div><span class="eyebrow">HISTORIA</span><h2>Presentación de la villa</h2></div></div><div class="form-grid">
+        ${field('Texto superior','introEyebrow','text','EL ENCANTO DE LO SIMPLE',true,undefined,undefined,content.introEyebrow)}
         ${field('Título','introTitle','text','Un refugio serrano',true,undefined,undefined,content.introTitle)}
         ${field('Continuación','introSubtitle','text','para volver al ritmo propio.',true,undefined,undefined,content.introSubtitle)}
-        <label class="field full"><span>Primer párrafo</span><textarea name="introCopyOne" rows="5" required>${esc(content.introCopyOne)}</textarea></label>
-        <label class="field full"><span>Segundo párrafo</span><textarea name="introCopyTwo" rows="3" required>${esc(content.introCopyTwo)}</textarea></label>
+        ${editorTextArea('Primer párrafo','introCopyOne',content.introCopyOne,5)}
+        ${editorTextArea('Segundo párrafo','introCopyTwo',content.introCopyTwo,3)}
+        ${field('Leyenda pequeña de la foto','featureCaptionSmall','text','El corazón de la casa',true,undefined,undefined,content.featureCaptionSmall)}
+        ${field('Leyenda principal de la foto','featureCaption','text','Un único espacio…',true,undefined,undefined,content.featureCaption)}
+      </div>${editorImage('featureImage','Imagen interior de ancho completo',content.featureImage)}</section>
+      <section class="card" id="editor-galeria"><div class="card-header"><div><span class="eyebrow">ESPACIOS Y GALERÍA</span><h2>Recorrido fotográfico</h2></div></div><div class="form-grid">
+        ${field('Texto superior','spacesEyebrow','text','RECORRÉ VILLA IL FANALE',true,undefined,undefined,content.spacesEyebrow)}
+        ${field('Título','spacesTitle','text','Rincones que invitan',true,undefined,undefined,content.spacesTitle)}
+        ${field('Continuación','spacesSubtitle','text','a quedarse.',true,undefined,undefined,content.spacesSubtitle)}
+        ${editorTextArea('Descripción','spacesDescription',content.spacesDescription,3)}
+        ${field('Nombre foto 1','gallery1Caption','text','Jardín',true,undefined,undefined,content.gallery1Caption)}
+        ${field('Nombre foto 2','gallery2Caption','text','Altillo matrimonial',true,undefined,undefined,content.gallery2Caption)}
+        ${field('Nombre foto 3','gallery3Caption','text','Asador',true,undefined,undefined,content.gallery3Caption)}
+        ${field('Nombre foto 4','gallery4Caption','text','Galería',true,undefined,undefined,content.gallery4Caption)}
+        ${field('Nombre foto 5','gallery5Caption','text','Rincones con historia',true,undefined,undefined,content.gallery5Caption)}
+      </div><div class="editor-gallery">${editorImage('gallery1Image','Foto 1 · Jardín',content.gallery1Image)}${editorImage('gallery2Image','Foto 2 · Altillo',content.gallery2Image)}${editorImage('gallery3Image','Foto 3 · Asador',content.gallery3Image)}${editorImage('gallery4Image','Foto 4 · Galería',content.gallery4Image)}${editorImage('gallery5Image','Foto 5 · Rincón',content.gallery5Image)}</div></section>
+      <section class="card" id="editor-servicios"><div class="card-header"><div><span class="eyebrow">SERVICIOS</span><h2>Equipamiento y comodidades</h2></div></div><div class="form-grid">
+        ${field('Texto superior','detailsEyebrow','text','TODO LO NECESARIO',true,undefined,undefined,content.detailsEyebrow)}${field('Título','detailsTitle','text','Preparada para',true,undefined,undefined,content.detailsTitle)}${field('Continuación','detailsSubtitle','text','disfrutarla.',true,undefined,undefined,content.detailsSubtitle)}
+        ${[1,2,3,4,5,6].map(i=>`${field(`Servicio ${i}` ,`amenity${i}Title`,'text','',true,undefined,undefined,content[`amenity${i}Title`])}${field(`Descripción ${i}`,`amenity${i}Description`,'text','',true,undefined,undefined,content[`amenity${i}Description`])}`).join('')}
+      </div>${editorImage('detailsImage','Imagen lateral de servicios',content.detailsImage)}</section>
+      <section class="card" id="editor-normas"><div class="card-header"><div><span class="eyebrow">NORMAS Y HORARIOS</span><h2>Información antes de venir</h2></div></div><div class="form-grid">
+        ${field('Texto superior','rulesEyebrow','text','ANTES DE VENIR',true,undefined,undefined,content.rulesEyebrow)}${field('Título','rulesTitle','text','Información clara,',true,undefined,undefined,content.rulesTitle)}${field('Continuación','rulesSubtitle','text','estadías tranquilas.',true,undefined,undefined,content.rulesSubtitle)}
+        ${[1,2,3,4].map(i=>`${field(`Dato ${i}`,`rule${i}Value`,'text','',true,undefined,undefined,content[`rule${i}Value`])}${field(`Título ${i}`,`rule${i}Title`,'text','',true,undefined,undefined,content[`rule${i}Title`])}${editorTextArea(`Explicación ${i}`,`rule${i}Description`,content[`rule${i}Description`],2)}`).join('')}
+        ${editorTextArea('Aviso importante','importantText',content.importantText,3)}
       </div></section>
-      <section class="card"><div class="card-header"><div><span class="eyebrow">IMAGEN DESTACADA</span><h2>La fotografía principal interior</h2></div></div><div class="editor-image"><img id="feature-editor-preview" src="${esc(previewImage || 'assets/loft.png')}" alt="Vista previa"><div><p class="muted">Elegí una fotografía JPG, PNG o WebP. Se publicará junto con los demás cambios.</p><button type="button" class="secondary-button" data-action="uploadFeatureImage">Cambiar fotografía</button><small id="feature-file-name">${content.featureImage || 'Imagen actual'}</small></div></div><input id="feature-image-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden></section>
-      <section class="card"><div class="card-header"><div><span class="eyebrow">TARIFAS ORIENTATIVAS</span><h2>Valores que muestra la página</h2></div></div><div class="form-grid">
+      <section class="card" id="editor-reservas"><div class="card-header"><div><span class="eyebrow">CONSULTAS Y RESERVAS</span><h2>Formulario público</h2></div></div><div class="form-grid">
+        ${field('Texto superior','bookingEyebrow','text','TU PRÓXIMA ESCAPADA',true,undefined,undefined,content.bookingEyebrow)}${field('Título','bookingTitle','text','Consultá tus fechas.',true,undefined,undefined,content.bookingTitle)}${editorTextArea('Explicación','bookingDescription',content.bookingDescription,4)}${field('Ubicación del pie','footerLocation','text','Alpa Corral · Córdoba · Argentina',true,undefined,undefined,content.footerLocation)}
         ${field('Una sola noche','singleNight','number','100000',true,1,undefined,content.singleNight)}
         ${field('Dos noches o más','regularNight','number','60000',true,1,undefined,content.regularNight)}
         ${field('Temporada alta','highNight','number','65000',true,1,undefined,content.highNight)}
-      </div></section>
+      </div>${editorImage('bookingImage','Imagen junto al formulario',content.bookingImage)}</section>
       <div class="editor-publish"><div><b>¿Todo listo?</b><span>Primero guardá el borrador. Publicar actualizará la página que ven los huéspedes.</span></div><div class="row-actions"><button type="submit" class="ghost-button">Guardar borrador</button><button type="button" class="primary-button" data-action="publishPublicPage">Publicar cambios</button></div></div>
     </div>
   </form>`;
 }
+
+function editorTextArea(label,name,value,rows=3) { return `<label class="field full"><span>${label}</span><textarea name="${name}" rows="${rows}" required>${esc(value)}</textarea></label>`; }
+function editorImage(key,label,src) { const preview=src?.startsWith('../')?src.slice(3):src; return `<div class="editor-image editor-image-slot"><img id="preview-${key}" src="${esc(preview||'assets/loft.png')}" alt="${esc(label)}"><div><b>${esc(label)}</b><p class="muted">JPG, PNG o WebP.</p><button type="button" class="secondary-button" data-image-slot="${key}">Cambiar fotografía</button><small id="file-${key}">${esc(src||'Imagen actual')}</small></div><input type="file" data-image-input="${key}" accept="image/jpeg,image/png,image/webp" hidden></div>`; }
 
 function capturePublicEditor() {
   const form = document.querySelector('#public-editor-form');
@@ -387,13 +419,14 @@ function savePublicDraft(event) {
   saveState('Borrador guardado en esta computadora');
 }
 
-function handleFeatureImageSelected(event) {
-  const file = event.target.files?.[0];
+function handlePublicImageSelected(input) {
+  const file = input.files?.[0];
   if (!file) return;
-  pendingFeatureImage = file;
-  const preview = document.querySelector('#feature-editor-preview');
+  const key = input.dataset.imageInput;
+  pendingPublicImages[key] = file;
+  const preview = document.querySelector(`#preview-${key}`);
   if (preview) preview.src = URL.createObjectURL(file);
-  const name = document.querySelector('#feature-file-name');
+  const name = document.querySelector(`#file-${key}`);
   if (name) name.textContent = `${file.name} · lista para publicar`;
 }
 
@@ -403,13 +436,13 @@ async function publishPublicPage() {
   const button = document.querySelector('[data-action="publishPublicPage"]');
   if (button) { button.disabled = true; button.textContent = 'Publicando…'; }
   try {
-    if (pendingFeatureImage) {
-      const extension = (pendingFeatureImage.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
-      const path = `assets/pagina-${Date.now()}.${extension}`;
-      await githubPutFile(path, bytesToBase64(new Uint8Array(await pendingFeatureImage.arrayBuffer())), 'Actualizar fotografía de la página', token);
-      state.publicContent.featureImage = `../${path}`;
-      pendingFeatureImage = null;
+    for (const [key,file] of Object.entries(pendingPublicImages)) {
+      const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const path = `assets/pagina-${key}-${Date.now()}.${extension}`;
+      await githubPutFile(path, bytesToBase64(new Uint8Array(await file.arrayBuffer())), `Actualizar ${key} de la página`, token);
+      state.publicContent[key] = `../${path}`;
     }
+    pendingPublicImages = {};
     const json = `${JSON.stringify(state.publicContent, null, 2)}\n`;
     await githubPutFile('reservar/content.json', textToBase64(json), 'Actualizar contenido de la página pública', token);
     state.settings.singleNight = state.publicContent.singleNight;
