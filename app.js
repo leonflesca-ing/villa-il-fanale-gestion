@@ -1,0 +1,514 @@
+const STORAGE_KEY = 'villa-il-fanale-v1';
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const money = value => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value || 0);
+const dateLabel = value => value ? new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : 'Sin fecha';
+const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+
+const defaultState = {
+  leads: [],
+  reservations: [],
+  blocks: [],
+  tasks: [],
+  movements: [],
+  holidays: [],
+  inventory: [
+    { id: uid(), name: 'Vajilla', detail: 'Platos, vasos y cubiertos', status: 'hay' },
+    { id: uid(), name: 'Acolchados', detail: 'Para las cuatro camas', status: 'hay' },
+    { id: uid(), name: 'Almohadas', detail: 'Revisar antes de cada ingreso', status: 'hay' },
+    { id: uid(), name: 'Productos de limpieza', detail: 'Pisos, muebles y vidrios', status: 'poco' },
+    { id: uid(), name: 'Garrafa', detail: 'Cocina y futura calefacción', status: 'hay' }
+  ],
+  messages: [
+    { role: 'assistant', text: 'Hola, Juan. Tengo presente cómo funciona Villa il Fanale. Puedo ayudarte con precios, tareas, reservas, mejoras y publicaciones. Antes de cambiar algo importante, te voy a pedir autorización.' }
+  ],
+  settings: {
+    owner: '', dni: '', phone: '', facebookUrl: '', instagramUrl: '', airbnbIcsUrl: '',
+    metaUrl: 'https://business.facebook.com/latest/inbox/all',
+    maxGuests: 5, singleNight: 100000, regularNight: 60000, highNight: 65000,
+    checkin: '15:00', checkout: '11:00', minNights: 2,
+    formUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfbWGtz_DiTdwsPFv2W6LooVp_pfW49D_LGwdw53VBbkxa3xg/viewform?usp=header'
+  }
+};
+
+let state = loadState();
+let route = 'inicio';
+let calendarCursor = new Date();
+let leadFilter = 'todas';
+let selectedPhoto = 'assets/jardin-entrada.png';
+let installPrompt = null;
+
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return saved ? { ...defaultState, ...saved, settings: { ...defaultState.settings, ...saved.settings } } : structuredClone(defaultState);
+  } catch { return structuredClone(defaultState); }
+}
+function saveState(message) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (message) toast(message);
+}
+
+const navItems = [
+  ['inicio','⌂','Inicio'], ['consultas','◌','Consultas'], ['calendario','▦','Calendario'],
+  ['conexiones','⌁','Conexiones'], ['tareas','✓','Tareas'], ['finanzas','$','Ingresos'],
+  ['inventario','◇','Inventario'], ['contenido','✦','Contenido'], ['asistente','✺','Asistente']
+];
+const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','tareas','asistente'].includes(item[0]));
+const meta = {
+  inicio: ['HOY EN LA VILLA', () => greeting()], consultas: ['OPORTUNIDADES', 'Consultas y reservas'],
+  calendario: ['DISPONIBILIDAD', 'Calendario'], tareas: ['PREPARACIÓN', 'Tareas de la casa'],
+  finanzas: ['NÚMEROS CLAROS', 'Ingresos'], inventario: ['TODO EN SU LUGAR', 'Inventario'],
+  contenido: ['VOZ DE LA VILLA', 'Contenido para redes'], asistente: ['TU COPILOTO', 'Asistente de Villa il Fanale'],
+  conexiones: ['CONFIGURACIÓN', 'Conexiones']
+};
+
+function greeting() {
+  const hour = new Date().getHours();
+  return `${hour < 12 ? 'Buen día' : hour < 20 ? 'Buenas tardes' : 'Buenas noches'}, Juan`;
+}
+
+function init() {
+  renderNav();
+  bindGlobal();
+  fetchHolidays();
+  render();
+  registerServiceWorker();
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  if (route === 'conexiones') render();
+});
+
+function renderNav() {
+  document.querySelector('#desktop-nav').innerHTML = navItems.map(navButton).join('');
+  document.querySelector('#mobile-nav').innerHTML = mobileItems.map(navButton).join('');
+  document.querySelectorAll('[data-route]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.route)));
+}
+function navButton([key, icon, label]) {
+  return `<button class="nav-item ${route === key ? 'active' : ''}" data-route="${key}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`;
+}
+function navigate(next) {
+  route = next;
+  document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.route === route));
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function render() {
+  const [kicker, title] = meta[route];
+  document.querySelector('#page-kicker').textContent = kicker;
+  document.querySelector('#page-title').textContent = typeof title === 'function' ? title() : title;
+  document.querySelector('#quick-add').textContent = route === 'consultas' ? '＋ Nueva consulta' : '＋ Nueva consulta';
+  const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, asistente: renderAssistant, conexiones: renderConnections };
+  document.querySelector('#app').innerHTML = pages[route]();
+  bindPage();
+}
+
+function bindGlobal() {
+  document.querySelector('#quick-add').addEventListener('click', openLeadModal);
+  document.querySelector('#import-calendar').addEventListener('click', () => document.querySelector('#calendar-file').click());
+  document.querySelector('#calendar-file').addEventListener('change', importICS);
+}
+function bindPage() {
+  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => handleAction(button.dataset.action, button.dataset.id)));
+  document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { leadFilter = button.dataset.filter; render(); }));
+  document.querySelectorAll('[data-task]').forEach(input => input.addEventListener('change', () => toggleTask(input.dataset.task)));
+  document.querySelectorAll('[data-inventory]').forEach(button => button.addEventListener('click', () => cycleInventory(button.dataset.inventory)));
+  document.querySelectorAll('[data-photo]').forEach(button => button.addEventListener('click', () => { selectedPhoto = button.dataset.photo; render(); }));
+  const chatForm = document.querySelector('#chat-form');
+  if (chatForm) chatForm.addEventListener('submit', submitChat);
+  document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => askAssistant(button.dataset.prompt)));
+  const postType = document.querySelector('#post-type');
+  if (postType) postType.addEventListener('change', render);
+  const connectionsForm = document.querySelector('#connections-form');
+  if (connectionsForm) connectionsForm.addEventListener('submit', saveConnections);
+  const backupFile = document.querySelector('#backup-file');
+  if (backupFile) backupFile.addEventListener('change', importBackup);
+}
+
+function handleAction(action, id) {
+  const actions = {
+    newLead: openLeadModal, newReservation: openReservationModal, newBlock: openBlockModal,
+    convert: () => openReservationModal(state.leads.find(x => x.id === id)),
+    whatsapp: () => openWhatsApp(id), deleteLead: () => deleteLead(id),
+    details: () => openReservationDetails(id), addTask: openTaskModal,
+    addMovement: openMovementModal, addInventory: openInventoryModal,
+    prevMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); },
+    nextMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); },
+    copyPost: copyPost, importCalendar: () => document.querySelector('#calendar-file').click(),
+    openForm: () => window.open(state.settings.formUrl, '_blank'),
+    openMeta: () => window.open(state.settings.metaUrl || 'https://business.facebook.com/latest/inbox/all', '_blank'),
+    openFacebook: () => openConfiguredLink('facebookUrl', 'Facebook'),
+    openInstagram: () => openConfiguredLink('instagramUrl', 'Instagram'),
+    syncAirbnb: syncAirbnbCalendar, installApp: installApplication,
+    exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click()
+  };
+  actions[action]?.();
+}
+
+function renderDashboard() {
+  const upcoming = [...state.reservations].filter(r => r.checkout >= todayISO()).sort((a,b) => a.checkin.localeCompare(b.checkin));
+  const next = upcoming[0];
+  const pendingTasks = state.tasks.filter(t => !t.done).length;
+  const confirmedIncome = state.movements.filter(m => m.type === 'income').reduce((s,m) => s + Number(m.amount), 0);
+  const activeLeads = state.leads.filter(l => l.status !== 'convertida').length;
+  const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date()) / 86400000) : null;
+  return `
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow" style="color:#ead6ae">LOFT SERRANO · DESDE 1981</span>
+        <h2>${next ? `Próxima llegada:<br>${esc(next.guest)}` : 'La villa está lista<br>para su próxima historia'}</h2>
+        <p>${next ? `${dateLabel(next.checkin)} · ${next.guests} huéspedes · ${next.nights} noches. ${tasksForReservation(next.id).filter(t => !t.done).length} tareas pendientes.` : 'Todavía no hay una llegada próxima. Registrá una consulta o una reserva para poner el sistema en movimiento.'}</p>
+        <div class="hero-actions">
+          <button class="secondary-button" data-action="newLead">Nueva consulta</button>
+          <button class="ghost-button" style="color:white;border-color:rgba(255,255,255,.4)" data-action="newReservation">Cargar reserva</button>
+        </div>
+      </div>
+    </section>
+    <section class="stats-grid">
+      ${stat('Consultas activas', activeLeads, 'Señales de demanda')}
+      ${stat('Próximas estadías', upcoming.length, 'Reservas con seña')}
+      ${stat('Tareas pendientes', pendingTasks, pendingTasks ? 'Para poner al día' : 'Todo en orden')}
+      ${stat('Ingresos registrados', money(confirmedIncome), 'Histórico cargado')}
+    </section>
+    <section class="content-grid">
+      <div class="card">
+        <div class="card-header"><div><span class="eyebrow">PRÓXIMAMENTE</span><h2>Llegadas</h2></div><button class="ghost-button" data-route="calendario" onclick="navigate('calendario')">Ver calendario</button></div>
+        ${upcoming.length ? `<div class="list">${upcoming.slice(0,4).map(reservationRow).join('')}</div>` : empty('⌂','Sin reservas próximas','Cuando recibas una seña, la estadía aparecerá acá.')}
+      </div>
+      <div class="card">
+        <div class="card-header"><div><span class="eyebrow">ATENCIÓN</span><h2>Para resolver</h2></div></div>
+        ${pendingTasks ? `<div class="list">${state.tasks.filter(t=>!t.done).slice(0,5).map(taskMini).join('')}</div>` : empty('✓','Todo tranquilo','No hay tareas pendientes.')}
+        ${daysToNext !== null && daysToNext <= 2 ? `<div class="quote-box"><b>Recordatorio de llegada</b><p style="margin:5px 0 0">${esc(next.guest)} ingresa ${daysToNext <= 0 ? 'hoy' : `en ${daysToNext} día${daysToNext===1?'':'s'}`}.</p></div>` : ''}
+      </div>
+    </section>`;
+}
+function stat(label, value, note) { return `<article class="stat-card"><span class="eyebrow">${label}</span><strong>${value}</strong><small>${note}</small></article>`; }
+function empty(icon, title, note) { return `<div class="empty"><span class="empty-icon">${icon}</span><b>${title}</b><p>${note}</p></div>`; }
+function reservationRow(r) {
+  const balance = Number(r.total) - Number(r.paid || 0);
+  return `<div class="list-item"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes</p></div><div class="row-actions"><span class="pill"><span class="dot"></span>Confirmada</span><button data-action="details" data-id="${r.id}">${balance > 0 ? `Saldo ${money(balance)}` : 'Ver'}</button></div></div>`;
+}
+function taskMini(t) { return `<div class="list-item"><div class="list-item-main"><b>${esc(t.title)}</b><p>${esc(t.category)} · ${t.due ? dateLabel(t.due) : 'Sin fecha'}</p></div></div>`; }
+
+function renderLeads() {
+  const filters = [['todas','Todas'],['nueva','Nuevas'],['presupuesto','Presupuesto enviado'],['convertida','Convertidas']];
+  const rows = state.leads.filter(l => leadFilter === 'todas' || l.status === leadFilter);
+  return `<section class="card">
+    <div class="card-header"><div><span class="eyebrow">DE WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">Una consulta señala demanda; la fecha sólo se cierra cuando recibís la seña.</p></div><button class="primary-button" data-action="newLead">＋ Nueva consulta</button></div>
+    <div class="filters">${filters.map(([k,l]) => `<button class="filter ${leadFilter===k?'active':''}" data-filter="${k}">${l}</button>`).join('')}</div>
+    ${rows.length ? `<div class="list">${rows.map(leadRow).join('')}</div>` : empty('◌','No hay consultas en esta vista','Cargá la próxima persona que pregunte por fechas.')}
+  </section>`;
+}
+function leadRow(l) {
+  const available = checkAvailability(l.checkin, l.checkout);
+  return `<div class="list-item"><div class="list-item-main"><b>${esc(l.name)}</b> <span class="pill gray">${esc(l.channel)}</span><p>${dateLabel(l.checkin)} → ${dateLabel(l.checkout)} · ${l.guests} personas · ${available ? 'Disponible' : 'Cruza una fecha ocupada'}</p></div><div class="row-actions"><span class="pill ${l.status==='nueva'?'warn':''}">${statusLabel(l.status)}</span><button data-action="whatsapp" data-id="${l.id}">Responder</button>${l.status!=='convertida'?`<button data-action="convert" data-id="${l.id}">Confirmar seña</button>`:''}<button class="danger" data-action="deleteLead" data-id="${l.id}">×</button></div></div>`;
+}
+function statusLabel(status) { return ({ nueva:'Nueva', presupuesto:'Presupuesto enviado', convertida:'Reserva confirmada' })[status] || status; }
+
+function renderCalendar() {
+  const year = calendarCursor.getFullYear(), month = calendarCursor.getMonth();
+  const label = new Intl.DateTimeFormat('es-AR', { month:'long', year:'numeric' }).format(calendarCursor);
+  const first = new Date(year, month, 1); const start = new Date(year, month, 1 - ((first.getDay()+6)%7));
+  const days = Array.from({length:42}, (_,i) => { const d = new Date(start); d.setDate(start.getDate()+i); return d; });
+  return `<section class="card">
+    <div class="card-header"><div><span class="eyebrow">RESERVAS, BLOQUEOS Y FERIADOS</span><h2>Disponibilidad</h2></div><div class="row-actions"><button data-action="newBlock">Bloquear fechas</button><button data-action="newReservation">Cargar reserva</button><button data-action="importCalendar">Importar .ics</button></div></div>
+    <div class="calendar-toolbar"><button class="icon-button" data-action="prevMonth">‹</button><h2>${label}</h2><button class="icon-button" data-action="nextMonth">›</button></div>
+    <div class="calendar-grid">${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(x=>`<div class="weekday">${x}</div>`).join('')}${days.map(d=>calendarDay(d,month)).join('')}</div>
+  </section>
+  <section class="content-grid"><div class="card"><h2>Reservas confirmadas</h2>${state.reservations.length?`<div class="list">${state.reservations.sort((a,b)=>a.checkin.localeCompare(b.checkin)).map(reservationRow).join('')}</div>`:empty('▦','Calendario despejado','No hay reservas cargadas.')}</div><div class="card"><h2>Cómo funciona</h2><p class="muted">Las consultas no bloquean fechas. Sólo una seña convierte la consulta en reserva confirmada. Podés tener salida a las 11:00 e ingreso a las 15:00 el mismo día.</p></div></section>`;
+}
+function calendarDay(d, shownMonth) {
+  const iso = localISO(d); const events = [];
+  state.reservations.forEach(r => { if (iso >= r.checkin && iso < r.checkout) events.push(`<div class="calendar-event">${esc(r.guest)}</div>`); });
+  state.blocks.forEach(b => { if (iso >= b.start && iso <= b.end) events.push(`<div class="calendar-event blocked">Bloqueado</div>`); });
+  const holiday = state.holidays.find(h => h.fecha === iso || h.date === iso); if (holiday) events.push(`<div class="calendar-event blocked">${esc(holiday.nombre || holiday.localName)}</div>`);
+  return `<div class="day ${d.getMonth()!==shownMonth?'outside':''} ${iso===todayISO()?'today':''}"><span class="day-number">${d.getDate()}</span>${events.slice(0,3).join('')}</div>`;
+}
+function renderTasks() {
+  const open = state.tasks.filter(t=>!t.done), done = state.tasks.filter(t=>t.done);
+  return `<section class="card"><div class="card-header"><div><span class="eyebrow">CHECKLIST OPERATIVO</span><h2>Preparar Villa il Fanale</h2><p class="muted">Cada reserva crea su lista automáticamente. Las fotos son opcionales.</p></div><button class="primary-button" data-action="addTask">＋ Nueva tarea</button></div>
+  ${open.length ? groupTasks(open) : empty('✓','No hay tareas pendientes','La casa está al día.')}
+  ${done.length ? `<details><summary>${done.length} tareas terminadas</summary>${groupTasks(done)}</details>` : ''}</section>`;
+}
+function groupTasks(tasks) {
+  const groups = Object.groupBy ? Object.groupBy(tasks, t=>t.category) : tasks.reduce((o,t)=>((o[t.category]??=[]).push(t),o),{});
+  return Object.entries(groups).map(([category,items]) => `<div class="task-group"><div class="task-group-title">${esc(category)}</div>${items.map(t=>`<label class="task ${t.done?'done':''}"><input type="checkbox" data-task="${t.id}" ${t.done?'checked':''}><span>${esc(t.title)} ${t.due?`<small class="muted">· ${dateLabel(t.due)}</small>`:''}</span></label>`).join('')}</div>`).join('');
+}
+
+function renderFinances() {
+  const income = sumMovements('income'), expenses = sumMovements('expense'), balance = income-expenses;
+  return `<section class="card"><div class="card-header"><div><span class="eyebrow">CONTROL SIMPLE</span><h2>Ingresos de la villa</h2><p class="muted">Empezamos por ingresos; los gastos pueden sumarse cuando lo necesites.</p></div><button class="primary-button" data-action="addMovement">＋ Registrar movimiento</button></div>
+    <div class="finance-summary"><div class="money"><small>Ingresos</small><strong>${money(income)}</strong></div><div class="money expense"><small>Gastos</small><strong>${money(expenses)}</strong></div><div class="money balance"><small>Resultado</small><strong>${money(balance)}</strong></div></div>
+    ${state.movements.length?`<div class="list">${[...state.movements].reverse().map(m=>`<div class="list-item"><div><b>${esc(m.label)}</b><p class="muted">${dateLabel(m.date)} · ${m.type==='income'?'Ingreso':'Gasto'}</p></div><strong style="color:${m.type==='income'?'var(--pine)':'var(--rust)'}">${m.type==='income'?'+':'−'} ${money(m.amount)}</strong></div>`).join('')}</div>`:empty('$','Todavía no hay movimientos','El primer ingreso aparecerá cuando confirmes una reserva o lo cargues manualmente.')}
+  </section>`;
+}
+function sumMovements(type) { return state.movements.filter(m=>m.type===type).reduce((s,m)=>s+Number(m.amount),0); }
+
+function renderInventory() {
+  return `<section class="card"><div class="card-header"><div><span class="eyebrow">HAY · QUEDA POCO · FALTA</span><h2>Inventario esencial</h2></div><button class="primary-button" data-action="addInventory">＋ Agregar elemento</button></div><div class="inventory-grid">${state.inventory.map(i=>`<article class="inventory-item"><h3>${esc(i.name)}</h3><p class="muted">${esc(i.detail)}</p><button class="status-button status-${i.status}" data-inventory="${i.id}">${({hay:'Hay',poco:'Queda poco',falta:'Falta'})[i.status]}</button></article>`).join('')}</div></section>`;
+}
+
+const photos = [
+  ['assets/jardin-entrada.png','El jardín'],['assets/jardin-flores.png','Flores'],['assets/loft.png','El loft'],
+  ['assets/altillo.png','Altillo'],['assets/asador.png','Asador'],['assets/galeria.png','Galería'],['assets/cartel.png','Historia'],['assets/frente.png','Frente']
+];
+function renderContent() {
+  const type = document.querySelector('#post-type')?.value || 'escapada';
+  const copy = postCopy(type);
+  return `<section class="generator"><div class="card"><span class="eyebrow">ELEGANTE, CÁLIDO Y SERRANO</span><h2>Elegí una imagen</h2><div class="photo-grid">${photos.map(([src,label])=>`<button class="photo-option ${selectedPhoto===src?'selected':''}" data-photo="${src}" title="${label}"><img src="${src}" alt="${label}"></button>`).join('')}</div></div>
+  <div class="card"><div class="card-header"><div><span class="eyebrow">BORRADOR PARA REDES</span><h2>Nueva publicación</h2></div><select id="post-type" style="width:auto"><option value="escapada" ${type==='escapada'?'selected':''}>Escapada serrana</option><option value="disponibilidad" ${type==='disponibilidad'?'selected':''}>Fechas disponibles</option><option value="historia" ${type==='historia'?'selected':''}>Historia de la casa</option></select></div><div class="post-preview"><img src="${selectedPhoto}" alt="Vista previa"><div class="post-copy" id="post-copy">${esc(copy)}</div></div><div class="form-actions"><button class="primary-button" data-action="copyPost">Copiar texto</button></div></div></section>`;
+}
+function postCopy(type) {
+  const variants = {
+    escapada: `Un refugio con alma de sierra. 🌿\n\nVilla il Fanale es un loft amplio y totalmente equipado para hasta 5 personas, con jardín, galería y asador en una zona tranquila de Alpa Corral.\n\nUn lugar para bajar el ritmo, cocinar sin apuro y volver a escuchar el silencio.\n\nConsultas y reservas por WhatsApp: ${state.settings.phone}\n\n#AlpaCorral #SierrasDeCórdoba #VillaIlFanale #EscapadaSerrana`,
+    disponibilidad: `Hay fechas disponibles para una pausa en las sierras. ✨\n\nLoft serrano para hasta 5 personas, equipado para disfrutar en familia o con amigos. Estadía mínima de dos noches.\n\nEscribinos por WhatsApp para consultar disponibilidad: ${state.settings.phone}\n\n#AlpaCorral #TurismoCórdoba #VillaIlFanale`,
+    historia: `Desde 1981, este farol acompaña las historias de Villa il Fanale. 🏮\n\nMadera, jardín y esos rincones que conservan el encanto de las casas serranas. Hoy abrimos sus puertas para compartirla con quienes buscan descanso y naturaleza.\n\n#VillaIlFanale #LoftSerrano #AlpaCorral`
+  }; return variants[type];
+}
+
+function renderAssistant() {
+  const prompts = ['¿Qué tengo que hacer hoy?','Sugerime un precio','¿Cómo viene el negocio?','Ayudame con la calefacción','Creá una publicación'];
+  return `<section class="chat-layout"><aside class="card chat-prompts"><span class="eyebrow">ATAJOS</span><h2>Preguntame</h2>${prompts.map(p=>`<button data-prompt="${esc(p)}">${esc(p)}</button>`).join('')}<p class="muted" style="margin-top:20px;font-size:12px">Las recomendaciones se basan en la información cargada. Para investigar precios o productos actuales, el asistente te propone una búsqueda y te pide autorización.</p></aside><div class="card chat-box"><div class="messages" id="messages">${state.messages.map(m=>`<div class="message ${m.role==='user'?'user':''}">${esc(m.text)}</div>`).join('')}</div><form class="chat-input" id="chat-form"><input name="message" placeholder="Preguntá sobre la casa, una reserva o una mejora…" autocomplete="off"><button class="primary-button">Enviar</button></form></div></section>`;
+}
+
+function renderConnections() {
+  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+  const imported = state.reservations.filter(r => r.external).length;
+  return `<section class="connection-hero card">
+    <div><span class="eyebrow">CENTRO DE CONEXIONES</span><h2>Todo entra por acá</h2><p class="muted">La aplicación sigue siendo gratuita. Ninguna conexión compra servicios ni envía información sin que vos lo apruebes.</p></div>
+    <div class="connection-badge ${isSecure ? 'ready' : ''}"><span>${isSecure ? '✓' : '○'}</span><b>${isSecure ? 'Lista para instalar' : 'Modo local'}</b><small>${isSecure ? 'Abierta desde una dirección segura' : 'Para instalarla como app debe publicarse en HTTPS'}</small></div>
+  </section>
+  <section class="connections-grid">
+    ${connectionCard('▦','Airbnb Calendar', imported ? `${imported} eventos importados` : 'Todavía sin importar', imported?'ready':'manual', `Descargá el calendario de Airbnb como archivo .ics y cargalo acá. También podés guardar el enlace privado para tenerlo a mano.`, `<button class="primary-button" data-action="importCalendar">Importar archivo .ics</button>${state.settings.airbnbIcsUrl?`<button class="ghost-button" data-action="syncAirbnb">Intentar sincronizar</button>`:''}`)}
+    ${connectionCard('','Calendario de Apple','Importación manual','manual','En Calendario de Apple elegí Archivo → Exportar → Exportar y seleccioná el archivo .ics desde la aplicación.',`<button class="primary-button" data-action="importCalendar">Importar desde Apple</button>`)}
+    ${connectionCard('◉','Meta Business Suite','Facebook + Instagram','ready','Abrí la bandeja unificada para leer y responder mensajes de Facebook e Instagram. Desde ahí registrás la consulta en la app.',`<button class="primary-button" data-action="openMeta">Abrir bandeja de Meta</button>`)}
+    ${connectionCard('◌','Formulario de huéspedes','Conectado','ready','Abre el formulario real de Villa il Fanale para que el titular complete sus datos y condiciones.',`<button class="primary-button" data-action="openForm">Abrir formulario</button>`)}
+  </section>
+  <section class="content-grid">
+    <form class="card" id="connections-form">
+      <div class="card-header"><div><span class="eyebrow">ENLACES Y DATOS LOCALES</span><h2>Configurar conexiones</h2><p class="muted">Estos datos se guardan solamente en este dispositivo.</p></div></div>
+      <div class="form-grid">
+        ${field('Nombre para comprobantes','owner','text','Nombre y apellido',false,undefined,undefined,state.settings.owner)}
+        ${field('DNI para comprobantes','dni','text','Se guarda sólo localmente',false,undefined,undefined,state.settings.dni)}
+        ${field('WhatsApp','phone','tel','Ej.: 358...',false,undefined,undefined,state.settings.phone)}
+        ${field('Facebook de Villa il Fanale','facebookUrl','url','https://facebook.com/...',false,undefined,undefined,state.settings.facebookUrl)}
+        ${field('Instagram de Villa il Fanale','instagramUrl','url','https://instagram.com/...',false,undefined,undefined,state.settings.instagramUrl)}
+        ${field('Enlace privado .ics de Airbnb','airbnbIcsUrl','url','https://www.airbnb.com/calendar/ical/...',false,undefined,undefined,state.settings.airbnbIcsUrl)}
+      </div>
+      <div class="form-actions"><button class="primary-button">Guardar configuración</button></div>
+    </form>
+    <div class="card">
+      <span class="eyebrow">INSTALACIÓN Y SEGURIDAD</span><h2>Usarla como aplicación</h2>
+      <p class="muted">Una vez publicada gratuitamente en una dirección HTTPS, podrás instalarla desde Safari o Chrome. Los datos seguirán siendo privados en cada dispositivo.</p>
+      <button class="primary-button" data-action="installApp" ${!installPrompt?'disabled':''}>${installPrompt?'Instalar ahora':'Disponible después de publicar'}</button>
+      <hr class="soft-rule">
+      <h3>Mover datos entre dispositivos</h3><p class="muted">Mientras no usemos una base online, esta copia es la forma gratuita y privada de pasar reservas de la computadora al celular.</p>
+      <div class="row-actions" style="justify-content:flex-start"><button data-action="exportBackup">Guardar copia</button><button data-action="importBackup">Cargar copia</button></div>
+      <input type="file" id="backup-file" accept="application/json,.json" hidden>
+    </div>
+  </section>
+  <section class="card security-note"><span class="security-icon">⌁</span><div><b>Conexión completa con mensajes</b><p>Leer conversaciones directamente dentro de esta app requiere permisos de Meta y un pequeño servidor seguro. No lo activo ahora porque complicaría la aplicación y podría generar costos. La bandeja oficial de Meta ya reúne Facebook e Instagram sin costo.</p></div></section>`;
+}
+
+function connectionCard(icon,title,status,tone,body,actions) {
+  return `<article class="card connection-card"><div class="connection-icon">${icon}</div><div class="connection-head"><div><h3>${title}</h3><span class="pill ${tone==='ready'?'':'warn'}"><span class="dot"></span>${status}</span></div></div><p class="muted">${body}</p><div class="connection-actions">${actions}</div></article>`;
+}
+
+function saveConnections(event) {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  Object.assign(state.settings, values);
+  saveState('Conexiones guardadas en este dispositivo');
+  render();
+}
+
+function openConfiguredLink(key, label) {
+  const url = state.settings[key];
+  if (!url) return toast(`Primero guardá el enlace de ${label} en Conexiones`);
+  window.open(url, '_blank');
+}
+
+async function syncAirbnbCalendar() {
+  const url = state.settings.airbnbIcsUrl;
+  if (!url) return toast('Primero guardá el enlace .ics de Airbnb');
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('calendar');
+    importICSText(await response.text());
+  } catch {
+    toast('Airbnb bloqueó la lectura directa. Descargá el archivo .ics e importalo manualmente.');
+  }
+}
+
+async function installApplication() {
+  if (!installPrompt) return toast('La instalación estará disponible cuando la aplicación tenga una dirección HTTPS');
+  await installPrompt.prompt();
+  installPrompt = null;
+  render();
+}
+
+function exportBackup() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = `villa-il-fanale-${todayISO()}.json`; link.click();
+  URL.revokeObjectURL(url);
+  toast('Copia preparada');
+}
+
+function importBackup(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { state = { ...defaultState, ...JSON.parse(reader.result) }; saveState('Datos restaurados'); render(); }
+    catch { toast('La copia no es válida'); }
+  };
+  reader.readAsText(file);
+}
+
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+function openLeadModal() {
+  openModal('Nueva consulta', `<form id="lead-form"><div class="form-grid">
+    ${field('Nombre','name','text','Nombre de la persona',true)}${selectField('Canal','channel',['WhatsApp','Facebook','Instagram','Airbnb'])}
+    ${field('Teléfono','phone','tel','358…')}${field('Cantidad de personas','guests','number','Hasta 5',true,'1','5')}
+    ${field('Ingreso','checkin','date','',true)}${field('Salida','checkout','date','',true)}
+    ${field('Precio por noche','nightly','number','La app lo sugiere')}${selectField('Estado','status',['nueva','presupuesto'],['Nueva','Presupuesto enviado'])}
+    ${textareaField('Notas de la conversación','notes','Qué pidió, dudas o detalles…')}
+  </div><div id="quote-result"></div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar consulta</button></div></form>`);
+  const form = document.querySelector('#lead-form');
+  ['checkin','checkout','guests'].forEach(name=>form.elements[name].addEventListener('change',()=>updateQuote(form)));
+  form.addEventListener('submit', event => { event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); const suggestion=suggestPrice(data.checkin,data.checkout); data.id=uid(); data.created=todayISO(); data.status=data.status||'nueva'; data.nightly=Number(data.nightly||suggestion.nightly); data.guests=Number(data.guests); state.leads.push(data); saveState('Consulta guardada'); closeModal(); navigate('consultas'); });
+  bindModal();
+}
+function updateQuote(form) {
+  if(!form.elements.checkin.value || !form.elements.checkout.value) return;
+  const suggestion=suggestPrice(form.elements.checkin.value,form.elements.checkout.value);
+  document.querySelector('#quote-result').innerHTML=`<div class="quote-box"><span class="eyebrow">SUGERENCIA DE LA APP</span><p><strong>${money(suggestion.nightly)} por noche</strong> · ${suggestion.nights} noche${suggestion.nights===1?'':'s'} · total sugerido ${money(suggestion.total)}</p><small>${suggestion.reason}</small></div>`;
+  if(!form.elements.nightly.value) form.elements.nightly.value=suggestion.nightly;
+}
+
+function openReservationModal(lead=null) {
+  openModal(lead ? 'Confirmar reserva con seña' : 'Cargar reserva confirmada', `<form id="reservation-form"><div class="form-grid">
+    ${field('Titular de la reserva','guest','text','Nombre y apellido',true,undefined,undefined,lead?.name||'')}${field('Teléfono','phone','tel','358…',false,undefined,undefined,lead?.phone||'')}
+    ${field('Ingreso','checkin','date','',true,undefined,undefined,lead?.checkin||'')}${field('Salida','checkout','date','',true,undefined,undefined,lead?.checkout||'')}
+    ${field('Cantidad de personas','guests','number','Máximo 5',true,'1','5',lead?.guests||'')}${selectField('Origen','channel',['WhatsApp','Facebook','Instagram','Airbnb'],null,lead?.channel||'WhatsApp')}
+    ${field('Precio total acordado','total','number','Importe total',true,undefined,undefined,lead ? suggestPrice(lead.checkin,lead.checkout,lead.nightly).total : '')}${field('Seña recibida','paid','number','50% del total',true)}
+    ${field('Depósito de garantía','guarantee','number','Opcional, lo definís vos')}${field('Patente','plate','text','Opcional')}
+    ${field('DNI del titular','guestDni','text','Dato opcional')}${field('Fecha de nacimiento','birthdate','date')}
+    ${field('Contacto de emergencia','emergencyPhone','tel','Dato opcional')}${field('Correo electrónico','email','email','Dato opcional')}
+    ${field('Ciudad y domicilio','address','text','Dato opcional')}${field('Acompañantes','companions','text','Nombres separados por coma')}
+    ${textareaField('Notas','notes','Datos importantes de la estadía')}
+    <label class="checkline field full"><input type="checkbox" name="depositConfirmed" required> Confirmo que recibí la seña y que estas fechas deben bloquearse.</label>
+  </div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Confirmar reserva</button></div></form>`);
+  const form=document.querySelector('#reservation-form');
+  form.elements.total.addEventListener('change', () => {
+    if (!form.elements.paid.value) form.elements.paid.value = Math.round(Number(form.elements.total.value || 0) * .5);
+  });
+  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.id=uid(); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout); data.receipt=nextReceipt(); data.created=todayISO(); state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,date:todayISO(),reservationId:data.id}); createReservationTasks(data); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada y tareas creadas'); closeModal(); navigate('calendario'); });
+  bindModal();
+}
+
+function openBlockModal() {
+  openModal('Bloquear disponibilidad', `<form id="block-form"><div class="form-grid">${field('Desde','start','date','',true)}${field('Hasta','end','date','',true)}${field('Motivo','reason','text','Ej.: no puedo viajar',true)}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Bloquear</button></div></form>`);
+  const form=document.querySelector('#block-form'); form.addEventListener('submit',e=>{e.preventDefault(); const data=Object.fromEntries(new FormData(form)); data.id=uid(); state.blocks.push(data); saveState('Fechas bloqueadas'); closeModal(); render();}); bindModal();
+}
+function openTaskModal() {
+  openModal('Nueva tarea', `<form id="task-form"><div class="form-grid">${field('Tarea','title','text','Qué hay que hacer',true)}${selectField('Categoría','category',['Exterior','Limpieza interior','Cocina y vajilla','Camas','Bienvenida','Mantenimiento'])}${field('Fecha','due','date')}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar tarea</button></div></form>`); const form=document.querySelector('#task-form');form.addEventListener('submit',e=>{e.preventDefault();state.tasks.push({...Object.fromEntries(new FormData(form)),id:uid(),done:false});saveState('Tarea creada');closeModal();render();});bindModal();
+}
+function openMovementModal() {
+  openModal('Registrar movimiento', `<form id="movement-form"><div class="form-grid">${selectField('Tipo','type',['income','expense'],['Ingreso','Gasto'])}${field('Concepto','label','text','Ej.: Seña reserva',true)}${field('Importe','amount','number','0',true)}${field('Fecha','date','date','',true,undefined,undefined,todayISO())}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar</button></div></form>`);const form=document.querySelector('#movement-form');form.addEventListener('submit',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form));d.id=uid();d.amount=Number(d.amount);state.movements.push(d);saveState('Movimiento registrado');closeModal();render();});bindModal();
+}
+function openInventoryModal() {
+  openModal('Agregar al inventario', `<form id="inventory-form"><div class="form-grid">${field('Elemento','name','text','Ej.: Copas',true)}${field('Detalle','detail','text','Qué controlar')}${selectField('Estado','status',['hay','poco','falta'],['Hay','Queda poco','Falta'])}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Agregar</button></div></form>`);const form=document.querySelector('#inventory-form');form.addEventListener('submit',e=>{e.preventDefault();state.inventory.push({...Object.fromEntries(new FormData(form)),id:uid()});saveState('Elemento agregado');closeModal();render();});bindModal();
+}
+
+function openReservationDetails(id) {
+  const r=state.reservations.find(x=>x.id===id); if(!r)return; const balance=Number(r.total)-Number(r.paid||0);
+  openModal(`Reserva de ${esc(r.guest)}`, `<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total)}<br>Pagado ${money(r.paid)}<br><b>Saldo ${money(balance)}</b></p></div><div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions"><button class="ghost-button" data-action="openForm">Abrir formulario de huéspedes</button>${r.guestDni||r.address||r.emergencyPhone?`<button class="ghost-button danger" id="clear-private">Borrar datos sensibles</button>`:''}<button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}</div>`);
+  bindModal(); document.querySelector('#print-receipt').addEventListener('click',()=>printReceipt(r)); const clearPrivate=document.querySelector('#clear-private');if(clearPrivate)clearPrivate.addEventListener('click',()=>{['guestDni','birthdate','emergencyPhone','email','address','companions','plate'].forEach(k=>r[k]='');saveState('Datos sensibles eliminados');closeModal();render();}); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
+}
+
+function openModal(title, body) {
+  document.querySelector('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><header class="modal-header"><h2>${title}</h2><button class="icon-button" data-close aria-label="Cerrar">×</button></header><div class="modal-body">${body}</div></section></div>`;
+}
+function bindModal(){document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));document.querySelectorAll('#modal-root [data-action]').forEach(b=>b.addEventListener('click',()=>handleAction(b.dataset.action,b.dataset.id)));}
+function closeModal(){document.querySelector('#modal-root').innerHTML='';}
+function field(label,name,type='text',placeholder='',required=false,min,max,value=''){return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" placeholder="${placeholder}" ${required?'required':''} ${min?`min="${min}"`:''} ${max?`max="${max}"`:''} value="${esc(value)}"></label>`;}
+function textareaField(label,name,placeholder=''){return `<label class="field full"><span>${label}</span><textarea name="${name}" placeholder="${placeholder}"></textarea></label>`;}
+function selectField(label,name,values,labels=null,selected=''){return `<label class="field"><span>${label}</span><select name="${name}">${values.map((v,i)=>`<option value="${v}" ${v===selected?'selected':''}>${labels?labels[i]:v}</option>`).join('')}</select></label>`;}
+
+function createReservationTasks(r) {
+  const checklist={
+    'Exterior':['Cortar el césped','Barrer la galería grande','Ordenar el jardín y el ingreso'],
+    'Limpieza interior':['Limpiar los vidrios','Barrer el interior','Pasar el trapo y encerar el piso','Limpiar el polvo de todos los muebles'],
+    'Cocina y vajilla':['Revisar y dejar limpia toda la vajilla','Controlar garrafa y cocina','Limpiar heladera y microondas'],
+    'Camas':['Airear los colchones','Preparar las camas con acolchados y almohadas'],
+    'Bienvenida':['Colocar el mantel tejido de bienvenida','Preparar cartelería, manual y normas','Colocar desodorante de ambientes','Confirmar entrega personal de llaves']
+  };
+  Object.entries(checklist).forEach(([category,titles])=>titles.forEach(title=>state.tasks.push({id:uid(),title,category,due:r.checkin,done:false,reservationId:r.id})));
+}
+function tasksForReservation(id){return state.tasks.filter(t=>t.reservationId===id);}
+function toggleTask(id){const t=state.tasks.find(x=>x.id===id);if(t){t.done=!t.done;saveState();render();}}
+function cycleInventory(id){const item=state.inventory.find(x=>x.id===id);const cycle={hay:'poco',poco:'falta',falta:'hay'};item.status=cycle[item.status];saveState('Estado actualizado');render();}
+function deleteLead(id){state.leads=state.leads.filter(x=>x.id!==id);saveState('Consulta eliminada');render();}
+
+function suggestPrice(checkin, checkout, override) {
+  const nights=nightCount(checkin,checkout); let nightly=Number(override)||state.settings.regularNight; let reason='Tarifa base para estadías de dos noches o más.';
+  if(nights===1){nightly=state.settings.singleNight;reason='Tarifa fija para una sola noche.';}
+  else {
+    const dates=datesBetween(checkin,checkout); const high=dates.some(d=>{const m=new Date(`${d}T12:00:00`).getMonth();return m===10||m===11||m===0||m===1;});
+    const holiday=dates.some(d=>state.holidays.some(h=>(h.fecha||h.date)===d));
+    const competing=state.leads.filter(l=>l.status!=='convertida'&&rangesOverlap(checkin,checkout,l.checkin,l.checkout)).length;
+    if(high||holiday||competing>=2){nightly=state.settings.highNight;reason=[high?'temporada alta (noviembre a febrero)':'',holiday?'feriado cercano':'',competing>=2?`${competing} consultas similares`:''].filter(Boolean).join(', ')+'. Precio final siempre a tu criterio.';}
+  }
+  return {nights,nightly,total:nights*nightly,reason};
+}
+function nightCount(a,b){return Math.max(0,Math.round((new Date(`${b}T12:00:00`)-new Date(`${a}T12:00:00`))/86400000));}
+function validDates(a,b){return a&&b&&b>a&&nightCount(a,b)>0;}
+function datesBetween(a,b){const dates=[];for(let d=new Date(`${a}T12:00:00`),end=new Date(`${b}T12:00:00`);d<end;d.setDate(d.getDate()+1))dates.push(localISO(d));return dates;}
+function localISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function rangesOverlap(a1,a2,b1,b2){return a1<b2&&b1<a2;}
+function checkAvailability(checkin,checkout){if(!checkin||!checkout)return true;return !state.reservations.some(r=>rangesOverlap(checkin,checkout,r.checkin,r.checkout))&&!state.blocks.some(b=>rangesOverlap(checkin,checkout,b.start,plusDay(b.end)));}
+function plusDay(iso){const d=new Date(`${iso}T12:00:00`);d.setDate(d.getDate()+1);return localISO(d);}
+function nextReceipt(){return `VIF-${String(state.reservations.length+1).padStart(4,'0')}`;}
+
+function openWhatsApp(id){const l=state.leads.find(x=>x.id===id);if(!l)return;const q=suggestPrice(l.checkin,l.checkout,l.nightly);const text=`Hola ${l.name}, ¿cómo estás? Gracias por comunicarte con Villa il Fanale. Tenemos disponibilidad del ${dateLabel(l.checkin)} al ${dateLabel(l.checkout)} para ${l.guests} persona${l.guests==1?'':'s'}. El valor es de ${money(q.nightly)} por noche, con un total de ${money(q.total)}. La reserva queda confirmada al recibir una seña del 50%; el saldo se abona al ingresar. El check-in es a las ${state.settings.checkin} y el check-out a las ${state.settings.checkout}. La casa no admite mascotas y no incluye ropa blanca. Si te parece bien, avanzamos con la reserva.`;l.status='presupuesto';saveState();const phone=normalizeWhatsApp(l.phone);window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`,'_blank');render();}
+function normalizeWhatsApp(phone){let digits=(phone||'').replace(/\D/g,'').replace(/^0/,'');if(!digits)return'';if(digits.startsWith('54'))return digits;return `549${digits}`;}
+function copyPost(){navigator.clipboard?.writeText(document.querySelector('#post-copy').innerText);toast('Publicación copiada');}
+
+function submitChat(event){event.preventDefault();const input=event.currentTarget.elements.message;const text=input.value.trim();if(!text)return;input.value='';askAssistant(text);}
+function askAssistant(text){state.messages.push({role:'user',text});state.messages.push({role:'assistant',text:assistantReply(text)});saveState();render();setTimeout(()=>{const box=document.querySelector('#messages');if(box)box.scrollTop=box.scrollHeight;},0);}
+function assistantReply(text){
+  const q=text.toLowerCase(); const pending=state.tasks.filter(t=>!t.done); const upcoming=state.reservations.filter(r=>r.checkout>=todayISO()).sort((a,b)=>a.checkin.localeCompare(b.checkin));
+  if(q.includes('hoy')||q.includes('tarea')) return pending.length?`Tenés ${pending.length} tareas pendientes. Las próximas son:\n${pending.slice(0,5).map(t=>`• ${t.title}${t.due?` (${dateLabel(t.due)})`:''}`).join('\n')}\n\n¿Querés que te lleve a la lista de tareas?`:'Hoy no hay tareas pendientes. La casa está al día.';
+  if(q.includes('precio')||q.includes('tarifa')) return `Para sugerirte un precio necesito las fechas y la cantidad de noches. Como regla actual: una noche cuesta ${money(state.settings.singleNight)}; dos noches o más parten de ${money(state.settings.regularNight)} y suben a ${money(state.settings.highNight)} en verano, feriados o alta demanda. Vos siempre confirmás el valor final.`;
+  if(q.includes('negocio')||q.includes('ingreso')||q.includes('ganancia')) return `Hasta ahora registraste ${money(sumMovements('income'))} en ingresos y ${state.reservations.length} reservas confirmadas. Hay ${state.leads.filter(l=>l.status!=='convertida').length} consultas activas, que sirven como indicador de demanda.`;
+  if(q.includes('calef')||q.includes('estufa')||q.includes('garrafa')) return `Para el loft de techos altos, una estufa garrafera puede ser una solución inicial de menor inversión, pero hay que dimensionarla por metros cúbicos, asegurar ventilación permanente y verificar instalación y monóxido con un gasista matriculado. La leña suma experiencia serrana, aunque exige más mantenimiento y es menos simple para huéspedes. Mi propuesta: comparar potencia, seguridad, costo de garrafas e instalación antes de comprar. ¿Querés que prepare una lista exacta de datos y luego investigue opciones actuales con tu autorización?`;
+  if(q.includes('publica')||q.includes('instagram')||q.includes('facebook')) return `Puedo prepararla. Primero elegiría una foto del jardín o del loft y un enfoque: escapada serrana, fechas disponibles o historia de la casa. La sección Contenido ya genera un borrador que vos aprobás antes de publicar.`;
+  if(q.includes('reserva')) return upcoming.length?`La próxima reserva es de ${upcoming[0].guest}, con ingreso el ${dateLabel(upcoming[0].checkin)}. Tiene ${tasksForReservation(upcoming[0].id).filter(t=>!t.done).length} tareas pendientes.`:'No hay reservas próximas. Las consultas sólo cierran fechas cuando recibís la seña.';
+  return `Lo tomo. Con la información actual puedo ayudarte a convertir esto en una tarea, una decisión o un mensaje. Antes de modificar reservas o enviar algo, voy a pedirte autorización. ¿Qué resultado concreto querés obtener?`;
+}
+
+function printReceipt(r){
+  const w=window.open('','_blank');const balance=Number(r.total)-Number(r.paid||0);w.document.write(`<!doctype html><html><head><title>Comprobante ${r.receipt}</title><style>body{font-family:Arial;max-width:700px;margin:50px auto;color:#24372b}.head{display:flex;justify-content:space-between;border-bottom:2px solid #244f3a;padding-bottom:20px}.tag{color:#777}.box{margin:25px 0;padding:20px;background:#f5f3ec;border-radius:12px}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd}.total{font-size:22px;font-weight:bold}.note{margin-top:40px;font-size:12px;color:#777}</style></head><body><div class="head"><div><h1>Villa il Fanale</h1><div>Loft serrano · Alpa Corral</div></div><div><b>${r.receipt}</b><br><span class="tag">Comprobante no fiscal</span></div></div><div class="box"><b>Responsable del alojamiento</b><p>${state.settings.owner}<br>DNI ${state.settings.dni}<br>Tel. ${state.settings.phone}</p></div><h2>Reserva de ${esc(r.guest)}</h2><p>${dateLabel(r.checkin)} al ${dateLabel(r.checkout)} · ${r.nights} noches · ${r.guests} huéspedes</p><div class="row"><span>Valor total</span><b>${money(r.total)}</b></div><div class="row"><span>Seña / importe abonado</span><b>${money(r.paid)}</b></div><div class="row total"><span>Saldo al ingresar</span><b>${money(balance)}</b></div><p class="note">La reserva se confirma con la seña. En caso de cancelación, la seña no es reembolsable. Este documento es un comprobante interno y no constituye factura.</p><script>window.print()<\/script></body></html>`);w.document.close();}
+
+async function fetchHolidays(){
+  const years=[new Date().getFullYear(),new Date().getFullYear()+1];
+  try{const results=await Promise.all(years.map(y=>fetch(`https://api.argentinadatos.com/v1/feriados/${y}`).then(r=>r.ok?r.json():[])));state.holidays=results.flat();saveState();if(route==='calendario')render();}catch{ /* funciona sin conexión; simplemente no destaca feriados */ }
+}
+function importICS(event){const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{importICSText(reader.result);event.target.value='';};reader.readAsText(file);}
+function importICSText(text){const chunks=text.split('BEGIN:VEVENT').slice(1);let added=0;chunks.forEach(chunk=>{const start=parseICSDate(matchICS(chunk,'DTSTART'));const end=parseICSDate(matchICS(chunk,'DTEND'));const summary=matchICS(chunk,'SUMMARY')||'Reserva externa';if(start&&end&&checkAvailability(start,end)){const id=uid();state.reservations.push({id,guest:summary,phone:'',checkin:start,checkout:end,guests:1,channel:'Calendario importado',total:0,paid:0,guarantee:0,nights:nightCount(start,end),receipt:nextReceipt(),created:todayISO(),external:true});createReservationTasks(state.reservations.at(-1));added++;}});saveState(`${added} eventos importados`);navigate('calendario');}
+function matchICS(chunk,key){const line=chunk.split(/\r?\n/).find(l=>l.startsWith(key));return line?line.split(':').slice(1).join(':').replace(/\\,/g,','):'';}
+function parseICSDate(value){if(!value)return'';const v=value.slice(0,8);return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;}
+
+function toast(message){const root=document.querySelector('#toast-root');root.innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>root.innerHTML='',2600);}
+
+init();
