@@ -1,4 +1,7 @@
 const STORAGE_KEY = 'villa-il-fanale-v1';
+const ADMIN_SESSION_KEY = 'villa-il-fanale-github-session';
+const GITHUB_OWNER = 'leonflesca-ing';
+const GITHUB_REPO = 'villa-il-fanale-gestion';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const money = value => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value || 0);
@@ -13,6 +16,14 @@ const defaultState = {
   movements: [],
   holidays: [],
   photoLibrary: [],
+  publicContent: {
+    heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
+    heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
+    introTitle: 'Un refugio serrano', introSubtitle: 'para volver al ritmo propio.',
+    introCopyOne: 'Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.',
+    introCopyTwo: 'Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.',
+    featureImage: '../assets/loft.png', regularNight: 60000, highNight: 65000, singleNight: 100000
+  },
   inventory: [
     { id: uid(), name: 'Vajilla', detail: 'Platos, vasos y cubiertos', status: 'hay' },
     { id: uid(), name: 'Acolchados', detail: 'Para las cuatro camas', status: 'hay' },
@@ -39,11 +50,12 @@ let calendarCursor = new Date();
 let leadFilter = 'todas';
 let selectedPhoto = 'assets/jardin-entrada.png';
 let installPrompt = null;
+let pendingFeatureImage = null;
 
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return saved ? { ...defaultState, ...saved, settings: { ...defaultState.settings, ...saved.settings } } : structuredClone(defaultState);
+    return saved ? { ...defaultState, ...saved, settings: { ...defaultState.settings, ...saved.settings }, publicContent: { ...defaultState.publicContent, ...saved.publicContent } } : structuredClone(defaultState);
   } catch { return structuredClone(defaultState); }
 }
 function saveState(message) {
@@ -56,15 +68,15 @@ function saveState(message) {
 const navItems = [
   ['inicio','⌂','Inicio'], ['consultas','◌','Consultas'], ['calendario','▦','Calendario'],
   ['conexiones','⌁','Conexiones'], ['tareas','✓','Tareas'], ['finanzas','$','Ingresos'],
-  ['inventario','◇','Inventario'], ['contenido','✦','Contenido'], ['asistente','✺','Asistente']
+  ['inventario','◇','Inventario'], ['contenido','✦','Contenido'], ['pagina','▤','Editar página'], ['asistente','✺','Asistente']
 ];
-const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','tareas','asistente'].includes(item[0]));
+const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','tareas','pagina','asistente'].includes(item[0]));
 const meta = {
   inicio: ['HOY EN LA VILLA', () => greeting()], consultas: ['OPORTUNIDADES', 'Consultas y reservas'],
   calendario: ['DISPONIBILIDAD', 'Calendario'], tareas: ['PREPARACIÓN', 'Tareas de la casa'],
   finanzas: ['NÚMEROS CLAROS', 'Ingresos'], inventario: ['TODO EN SU LUGAR', 'Inventario'],
   contenido: ['VOZ DE LA VILLA', 'Contenido para redes'], asistente: ['TU COPILOTO', 'Asistente de Villa il Fanale'],
-  conexiones: ['CONFIGURACIÓN', 'Conexiones']
+  conexiones: ['CONFIGURACIÓN', 'Conexiones'], pagina: ['SITIO PÚBLICO', 'Editar página pública']
 };
 
 function greeting() {
@@ -72,13 +84,41 @@ function greeting() {
   return `${hour < 12 ? 'Buen día' : hour < 20 ? 'Buenas tardes' : 'Buenas noches'}, Juan`;
 }
 
-function init() {
+async function init() {
+  if (['127.0.0.1','localhost'].includes(location.hostname)) return startApplication();
+  const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
+  if (!token || !(await validateAdminToken(token))) return renderAccessGate(token ? 'La autorización venció o no pertenece a la cuenta propietaria.' : '');
+  startApplication();
+}
+
+function startApplication() {
   renderNav();
   bindGlobal();
   fetchHolidays();
   render();
   registerServiceWorker();
   if (state.settings.bookingEndpoint && state.settings.bookingAdminKey) syncPublicRequests(true);
+}
+
+function renderAccessGate(message = '') {
+  document.querySelector('.app-shell').hidden = true;
+  document.querySelector('#mobile-nav').hidden = true;
+  const gate = document.createElement('section');
+  gate.className = 'access-gate';
+  gate.innerHTML = `<div class="access-panel"><img src="assets/farol.png" alt=""><span class="eyebrow">ÁREA PRIVADA</span><h1>Administración<br>Villa il Fanale</h1><p>Este espacio contiene la gestión de la vivienda y sólo puede abrirlo la cuenta propietaria.</p>${message?`<div class="access-error">${esc(message)}</div>`:''}<form id="access-form"><label class="field"><span>Clave privada de GitHub</span><input name="token" type="password" autocomplete="off" required placeholder="github_pat_…"></label><button class="primary-button" type="submit">Ingresar de forma segura</button></form><details><summary>¿Cómo obtengo la clave?</summary><ol><li>Abrí GitHub y creá un token de acceso específico.</li><li>Elegí solamente el repositorio <b>villa-il-fanale-gestion</b>.</li><li>Permití <b>Contents: Read and write</b>.</li><li>Copiá la clave y pegala arriba. Se conserva sólo durante esta sesión.</li></ol><a class="setup-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Crear clave en GitHub →</a></details></div>`;
+  document.body.appendChild(gate);
+  gate.querySelector('#access-form').addEventListener('submit', async event => {
+    event.preventDefault(); const button = event.currentTarget.querySelector('button'); const token = event.currentTarget.elements.token.value.trim();
+    button.disabled = true; button.textContent = 'Comprobando…';
+    if (await validateAdminToken(token)) { sessionStorage.setItem(ADMIN_SESSION_KEY, token); location.reload(); }
+    else { button.disabled = false; button.textContent = 'Ingresar de forma segura'; gate.querySelector('.access-error')?.remove(); const error=document.createElement('div');error.className='access-error';error.textContent='La clave no es válida o no pertenece a la cuenta propietaria.';event.currentTarget.before(error); }
+  });
+}
+
+async function validateAdminToken(token) {
+  if (!token) return false;
+  try { const response = await fetch('https://api.github.com/user', { headers: githubHeaders(token) }); const profile = await response.json(); return response.ok && profile.login === GITHUB_OWNER; }
+  catch { return false; }
 }
 
 window.addEventListener('beforeinstallprompt', event => {
@@ -106,7 +146,7 @@ function render() {
   document.querySelector('#page-kicker').textContent = kicker;
   document.querySelector('#page-title').textContent = typeof title === 'function' ? title() : title;
   document.querySelector('#quick-add').textContent = '＋ Cargar reserva';
-  const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, asistente: renderAssistant, conexiones: renderConnections };
+  const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, pagina: renderPublicEditor, asistente: renderAssistant, conexiones: renderConnections };
   document.querySelector('#app').innerHTML = pages[route]();
   bindPage();
 }
@@ -138,6 +178,10 @@ function bindPage() {
   }));
   const connectionsForm = document.querySelector('#connections-form');
   if (connectionsForm) connectionsForm.addEventListener('submit', saveConnections);
+  const publicEditorForm = document.querySelector('#public-editor-form');
+  if (publicEditorForm) publicEditorForm.addEventListener('submit', savePublicDraft);
+  const featureImageUpload = document.querySelector('#feature-image-upload');
+  if (featureImageUpload) featureImageUpload.addEventListener('change', handleFeatureImageSelected);
   const backupFile = document.querySelector('#backup-file');
   if (backupFile) backupFile.addEventListener('change', importBackup);
 }
@@ -164,7 +208,9 @@ function handleAction(action, id) {
     openPublicSite: () => window.open(state.settings.publicSiteUrl, '_blank'),
     syncPublicRequests: () => syncPublicRequests(false),
     syncAirbnb: syncAirbnbCalendar, installApp: installApplication,
-    exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click()
+    exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click(),
+    publishPublicPage: publishPublicPage, uploadFeatureImage: () => document.querySelector('#feature-image-upload')?.click(),
+    previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin
   };
   actions[action]?.();
 }
@@ -295,6 +341,104 @@ function renderContent() {
   return `<section class="generator"><div class="card"><div class="card-header"><div><span class="eyebrow">ELEGANTE, CÁLIDO Y SERRANO</span><h2>Biblioteca visual</h2><p class="muted">Elegí una foto existente o agregá material nuevo.</p></div><button class="secondary-button" data-action="addVisuals">＋ Agregar fotos</button></div><input type="file" id="visual-upload" accept="image/jpeg,image/png,image/webp" multiple hidden><div class="photo-grid">${photos.map(photo=>`<div class="photo-tile"><button class="photo-option ${selectedPhoto===photo.src?'selected':''}" data-photo="${photo.id}" title="${esc(photo.label)}"><img src="${photo.src}" alt="${esc(photo.label)}"></button>${photo.uploaded?`<button class="photo-delete" data-delete-photo="${photo.id}" aria-label="Eliminar ${esc(photo.label)}">×</button>`:''}</div>`).join('')}</div><p class="library-count">${photos.length} imágenes · Las fotos agregadas quedan guardadas en este dispositivo.</p></div>
   <div class="card"><div class="card-header"><div><span class="eyebrow">BORRADOR PARA REDES</span><h2>Nueva publicación</h2></div><select id="post-type" style="width:auto"><option value="escapada" ${type==='escapada'?'selected':''}>Escapada serrana</option><option value="disponibilidad" ${type==='disponibilidad'?'selected':''}>Fechas disponibles</option><option value="historia" ${type==='historia'?'selected':''}>Historia de la casa</option></select></div><div class="post-preview"><img src="${selectedPhoto}" alt="Vista previa"><div class="post-copy" id="post-copy">${esc(copy)}</div></div><div class="share-tip"><span>↗</span><p><b>Desde el celular</b><br>Compartí la imagen y elegí Instagram en el menú del dispositivo. El texto también quedará copiado para pegarlo como descripción.</p></div><div class="form-actions post-actions"><button class="ghost-button" data-action="copyPost">Copiar texto</button><button class="ghost-button" data-action="downloadPhoto">Guardar imagen</button><button class="primary-button" data-action="sharePost">Compartir publicación</button></div></div></section>`;
 }
+
+function renderPublicEditor() {
+  const content = state.publicContent || defaultState.publicContent;
+  const previewImage = content.featureImage?.startsWith('../') ? content.featureImage.slice(3) : content.featureImage;
+  return `<section class="editor-intro card"><div><span class="eyebrow">EDITOR DEL SITIO</span><h2>Tu página, sin tocar código</h2><p class="muted">Modificá el contenido, guardá un borrador y publicalo cuando estés conforme. Los visitantes sólo ven la última versión publicada.</p></div><div class="editor-status"><span class="dot"></span><div><b>Acceso verificado</b><small>Cuenta ${GITHUB_OWNER}</small></div></div></section>
+  <form id="public-editor-form" class="page-editor">
+    <div class="card editor-sidebar"><span class="eyebrow">SECCIONES</span><h3>Portada y presentación</h3><p class="muted">Esta primera versión permite editar lo más importante. Después podemos sumar servicios, normas y cada fotografía de la galería.</p><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
+    <div class="editor-fields">
+      <section class="card"><div class="card-header"><div><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></div></div><div class="form-grid">
+        ${field('Texto superior','heroEyebrow','text','ALPA CORRAL · CÓRDOBA',true,undefined,undefined,content.heroEyebrow)}
+        ${field('Título principal','heroTitle','text','Una casa con alma',true,undefined,undefined,content.heroTitle)}
+        ${field('Título destacado','heroSubtitle','text','de sierra.',true,undefined,undefined,content.heroSubtitle)}
+        <label class="field full"><span>Descripción breve</span><textarea name="heroDescription" rows="3" required>${esc(content.heroDescription)}</textarea></label>
+      </div></section>
+      <section class="card"><div class="card-header"><div><span class="eyebrow">HISTORIA</span><h2>Presentación de la villa</h2></div></div><div class="form-grid">
+        ${field('Título','introTitle','text','Un refugio serrano',true,undefined,undefined,content.introTitle)}
+        ${field('Continuación','introSubtitle','text','para volver al ritmo propio.',true,undefined,undefined,content.introSubtitle)}
+        <label class="field full"><span>Primer párrafo</span><textarea name="introCopyOne" rows="5" required>${esc(content.introCopyOne)}</textarea></label>
+        <label class="field full"><span>Segundo párrafo</span><textarea name="introCopyTwo" rows="3" required>${esc(content.introCopyTwo)}</textarea></label>
+      </div></section>
+      <section class="card"><div class="card-header"><div><span class="eyebrow">IMAGEN DESTACADA</span><h2>La fotografía principal interior</h2></div></div><div class="editor-image"><img id="feature-editor-preview" src="${esc(previewImage || 'assets/loft.png')}" alt="Vista previa"><div><p class="muted">Elegí una fotografía JPG, PNG o WebP. Se publicará junto con los demás cambios.</p><button type="button" class="secondary-button" data-action="uploadFeatureImage">Cambiar fotografía</button><small id="feature-file-name">${content.featureImage || 'Imagen actual'}</small></div></div><input id="feature-image-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden></section>
+      <section class="card"><div class="card-header"><div><span class="eyebrow">TARIFAS ORIENTATIVAS</span><h2>Valores que muestra la página</h2></div></div><div class="form-grid">
+        ${field('Una sola noche','singleNight','number','100000',true,1,undefined,content.singleNight)}
+        ${field('Dos noches o más','regularNight','number','60000',true,1,undefined,content.regularNight)}
+        ${field('Temporada alta','highNight','number','65000',true,1,undefined,content.highNight)}
+      </div></section>
+      <div class="editor-publish"><div><b>¿Todo listo?</b><span>Primero guardá el borrador. Publicar actualizará la página que ven los huéspedes.</span></div><div class="row-actions"><button type="submit" class="ghost-button">Guardar borrador</button><button type="button" class="primary-button" data-action="publishPublicPage">Publicar cambios</button></div></div>
+    </div>
+  </form>`;
+}
+
+function capturePublicEditor() {
+  const form = document.querySelector('#public-editor-form');
+  if (!form || !form.reportValidity()) return false;
+  const values = Object.fromEntries(new FormData(form));
+  ['singleNight','regularNight','highNight'].forEach(key => values[key] = Number(values[key]));
+  state.publicContent = { ...(state.publicContent || defaultState.publicContent), ...values };
+  return true;
+}
+
+function savePublicDraft(event) {
+  event.preventDefault();
+  if (!capturePublicEditor()) return;
+  saveState('Borrador guardado en esta computadora');
+}
+
+function handleFeatureImageSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  pendingFeatureImage = file;
+  const preview = document.querySelector('#feature-editor-preview');
+  if (preview) preview.src = URL.createObjectURL(file);
+  const name = document.querySelector('#feature-file-name');
+  if (name) name.textContent = `${file.name} · lista para publicar`;
+}
+
+async function publishPublicPage() {
+  if (!capturePublicEditor()) return;
+  const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
+  const button = document.querySelector('[data-action="publishPublicPage"]');
+  if (button) { button.disabled = true; button.textContent = 'Publicando…'; }
+  try {
+    if (pendingFeatureImage) {
+      const extension = (pendingFeatureImage.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const path = `assets/pagina-${Date.now()}.${extension}`;
+      await githubPutFile(path, bytesToBase64(new Uint8Array(await pendingFeatureImage.arrayBuffer())), 'Actualizar fotografía de la página', token);
+      state.publicContent.featureImage = `../${path}`;
+      pendingFeatureImage = null;
+    }
+    const json = `${JSON.stringify(state.publicContent, null, 2)}\n`;
+    await githubPutFile('reservar/content.json', textToBase64(json), 'Actualizar contenido de la página pública', token);
+    state.settings.singleNight = state.publicContent.singleNight;
+    state.settings.regularNight = state.publicContent.regularNight;
+    state.settings.highNight = state.publicContent.highNight;
+    saveState();
+    toast('Cambios publicados. La página se actualizará en unos minutos.');
+    if (button) button.textContent = 'Publicado ✓';
+  } catch (error) {
+    toast(error.message || 'No se pudo publicar. Revisá los permisos de la clave.');
+    if (button) { button.disabled = false; button.textContent = 'Publicar cambios'; }
+  }
+}
+
+async function githubPutFile(path, content, message, token) {
+  const endpoint = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
+  const current = await fetch(endpoint, { headers: githubHeaders(token) });
+  let sha;
+  if (current.ok) sha = (await current.json()).sha;
+  else if (current.status !== 404) throw new Error('No se pudo leer el sitio en GitHub.');
+  const response = await fetch(endpoint, { method:'PUT', headers:{ ...githubHeaders(token), 'Content-Type':'application/json' }, body:JSON.stringify({ message, content, branch:'main', ...(sha?{sha}:{}) }) });
+  if (!response.ok) throw new Error(response.status === 403 ? 'La clave necesita permiso “Contents: Read and write”.' : 'GitHub no pudo guardar este cambio.');
+}
+
+function githubHeaders(token) { return { Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' }; }
+function textToBase64(text) { return bytesToBase64(new TextEncoder().encode(text)); }
+function bytesToBase64(bytes) { let binary=''; bytes.forEach(byte => binary += String.fromCharCode(byte)); return btoa(binary); }
+function previewPublicPage() { window.open(`${state.settings.publicSiteUrl}?v=${Date.now()}`, '_blank'); }
+function logoutAdmin() { sessionStorage.removeItem(ADMIN_SESSION_KEY); location.reload(); }
 function postCopy(type) {
   const variants = {
     escapada: `Un refugio con alma de sierra. 🌿\n\nVilla il Fanale es un loft amplio y totalmente equipado para hasta 5 personas, con jardín, galería y asador en una zona tranquila de Alpa Corral.\n\nUn lugar para bajar el ritmo, cocinar sin apuro y volver a escuchar el silencio.\n\nConsultas y reservas por WhatsApp: ${state.settings.phone}\n\n#AlpaCorral #SierrasDeCórdoba #VillaIlFanale #EscapadaSerrana`,

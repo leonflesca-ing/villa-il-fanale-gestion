@@ -1,9 +1,9 @@
-const CACHE = 'villa-il-fanale-v6';
+const CACHE = 'villa-il-fanale-v7';
 const CORE = [
   './', './index.html', './styles.css', './app.js', './manifest.json',
   './assets/icon-192.png', './assets/icon-512.png', './assets/farol.png',
   './assets/jardin-entrada.png', './assets/logo-completo.png',
-  './reservar/', './reservar/index.html', './reservar/public.css', './reservar/public.js', './reservar/config.js'
+  './reservar/', './reservar/index.html', './reservar/public.css', './reservar/public.js', './reservar/config.js', './reservar/content.json'
 ];
 
 self.addEventListener('install', event => {

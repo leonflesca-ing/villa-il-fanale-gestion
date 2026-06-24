@@ -3,6 +3,16 @@ const form = document.querySelector('#booking-form');
 const success = document.querySelector('#success-panel');
 const estimate = document.querySelector('#estimate');
 const today = new Date().toISOString().slice(0, 10);
+let siteContent = {
+  heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
+  heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
+  introTitle: 'Un refugio serrano', introSubtitle: 'para volver al ritmo propio.',
+  introCopyOne: 'Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.',
+  introCopyTwo: 'Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.',
+  featureImage: '../assets/loft.png', regularNight: 60000, highNight: 65000, singleNight: 100000
+};
+
+loadSiteContent();
 
 document.querySelector('[name="checkin"]').min = today;
 document.querySelector('[name="checkout"]').min = today;
@@ -26,7 +36,7 @@ function updateEstimate() {
     estimate.innerHTML = '<span>Completá las fechas para ver una estimación.</span>'; return;
   }
   const nights = nightCount(checkin.value, checkout.value);
-  const nightly = nights === 1 ? 100000 : isHighSeason(checkin.value, checkout.value) ? 65000 : 60000;
+  const nightly = nights === 1 ? Number(siteContent.singleNight) : isHighSeason(checkin.value, checkout.value) ? Number(siteContent.highNight) : Number(siteContent.regularNight);
   estimate.innerHTML = `<span>${nights} noche${nights===1?'':'s'} · estimación orientativa</span><b>${money(nights * nightly)}</b>`;
 }
 
@@ -36,7 +46,7 @@ form.addEventListener('submit', async event => {
   if (values.checkout <= values.checkin) return alert('La fecha de salida debe ser posterior al ingreso.');
   const request = { id: `WEB-${Date.now().toString(36).toUpperCase()}`, createdAt: new Date().toISOString(), ...values, status: 'nueva' };
   const nights = nightCount(values.checkin, values.checkout);
-  const nightly = nights === 1 ? 100000 : isHighSeason(values.checkin, values.checkout) ? 65000 : 60000;
+  const nightly = nights === 1 ? Number(siteContent.singleNight) : isHighSeason(values.checkin, values.checkout) ? Number(siteContent.highNight) : Number(siteContent.regularNight);
   request.estimatedTotal = nights * nightly;
 
   let automatic = false;
@@ -62,3 +72,19 @@ function isHighSeason(a,b){for(let date=new Date(`${a}T12:00:00`),end=new Date(`
 function localISO(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 function money(value){return new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(value);}
 function dateLabel(value){return new Intl.DateTimeFormat('es-AR',{day:'numeric',month:'long',year:'numeric'}).format(new Date(`${value}T12:00:00`));}
+
+async function loadSiteContent() {
+  try {
+    const response = await fetch(`content.json?v=${Date.now()}`);
+    if (response.ok) siteContent = { ...siteContent, ...await response.json() };
+  } catch { /* conserva el contenido incluido en la página */ }
+  const values = {
+    'hero-eyebrow': siteContent.heroEyebrow, 'hero-title': siteContent.heroTitle, 'hero-subtitle': siteContent.heroSubtitle,
+    'hero-description': siteContent.heroDescription, 'intro-title': siteContent.introTitle, 'intro-subtitle': siteContent.introSubtitle,
+    'intro-copy-one': siteContent.introCopyOne, 'intro-copy-two': siteContent.introCopyTwo
+  };
+  Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element && value) element.textContent = value; });
+  if (siteContent.featureImage) document.querySelector('#feature-image').src = siteContent.featureImage;
+  document.querySelector('#public-rate').textContent = money(Number(siteContent.regularNight));
+  updateEstimate();
+}

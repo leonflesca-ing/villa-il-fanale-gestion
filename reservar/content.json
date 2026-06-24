@@ -1,0 +1,14 @@
+{
+  "heroEyebrow": "ALPA CORRAL · CÓRDOBA",
+  "heroTitle": "Una casa con alma",
+  "heroSubtitle": "de sierra.",
+  "heroDescription": "Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.",
+  "introTitle": "Un refugio serrano",
+  "introSubtitle": "para volver al ritmo propio.",
+  "introCopyOne": "Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.",
+  "introCopyTwo": "Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.",
+  "featureImage": "../assets/loft.png",
+  "regularNight": 60000,
+  "highNight": 65000,
+  "singleNight": 100000
+}
