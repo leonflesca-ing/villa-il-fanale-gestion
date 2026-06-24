@@ -24,7 +24,8 @@ const defaultState = {
     { role: 'assistant', text: 'Hola, Juan. Tengo presente cómo funciona Villa il Fanale. Puedo ayudarte con precios, tareas, reservas, mejoras y publicaciones. Antes de cambiar algo importante, te voy a pedir autorización.' }
   ],
   settings: {
-    owner: '', dni: '', phone: '', facebookUrl: '', instagramUrl: '', airbnbIcsUrl: '',
+    owner: '', dni: '', phone: '', facebookUrl: '', instagramUrl: '', airbnbIcsUrl: '', bookingEndpoint: '', bookingAdminKey: '',
+    publicSiteUrl: 'https://leonflesca-ing.github.io/villa-il-fanale-gestion/reservar/',
     metaUrl: 'https://business.facebook.com/latest/inbox/all',
     maxGuests: 5, singleNight: 100000, regularNight: 60000, highNight: 65000,
     checkin: '15:00', checkout: '11:00', minNights: 2,
@@ -77,6 +78,7 @@ function init() {
   fetchHolidays();
   render();
   registerServiceWorker();
+  if (state.settings.bookingEndpoint && state.settings.bookingAdminKey) syncPublicRequests(true);
 }
 
 window.addEventListener('beforeinstallprompt', event => {
@@ -159,6 +161,8 @@ function handleAction(action, id) {
     openMeta: () => window.open(state.settings.metaUrl || 'https://business.facebook.com/latest/inbox/all', '_blank'),
     openFacebook: () => openConfiguredLink('facebookUrl', 'Facebook'),
     openInstagram: () => openConfiguredLink('instagramUrl', 'Instagram'),
+    openPublicSite: () => window.open(state.settings.publicSiteUrl, '_blank'),
+    syncPublicRequests: () => syncPublicRequests(false),
     syncAirbnb: syncAirbnbCalendar, installApp: installApplication,
     exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click()
   };
@@ -213,8 +217,10 @@ function taskMini(t) { return `<div class="list-item"><div class="list-item-main
 function renderLeads() {
   const filters = [['todas','Todas'],['nueva','Nuevas'],['presupuesto','Presupuesto enviado'],['convertida','Convertidas']];
   const rows = state.leads.filter(l => leadFilter === 'todas' || l.status === leadFilter);
-  return `<section class="card">
-    <div class="card-header"><div><span class="eyebrow">DE WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">La carga manual queda disponible hasta activar la conexión automática con Meta.</p></div><button class="primary-button" data-action="newLead">＋ Registrar consulta manual</button></div>
+  const automatic = state.settings.bookingEndpoint && state.settings.bookingAdminKey;
+  return `<section class="booking-intake ${automatic?'connected':''}"><div><span class="booking-intake-icon">${automatic?'✓':'⌂'}</span><div><b>${automatic?'Página de reservas conectada':'Tu página pública está lista'}</b><p>${automatic?'Las solicitudes de la web pueden entrar automáticamente a esta bandeja.':'Los huéspedes pueden consultar fechas y enviarte su solicitud por WhatsApp.'}</p></div></div><div class="row-actions"><button data-action="openPublicSite">Ver página pública</button>${automatic?'<button class="primary-button" data-action="syncPublicRequests">Buscar solicitudes</button>':''}</div></section>
+  <section class="card">
+    <div class="card-header"><div><span class="eyebrow">DE LA WEB, WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">La carga manual sigue disponible para cualquier conversación que quieras registrar.</p></div><button class="primary-button" data-action="newLead">＋ Registrar consulta manual</button></div>
     <div class="filters">${filters.map(([k,l]) => `<button class="filter ${leadFilter===k?'active':''}" data-filter="${k}">${l}</button>`).join('')}</div>
     ${rows.length ? `<div class="list">${rows.map(leadRow).join('')}</div>` : empty('◌','No hay consultas en esta vista','Cargá la próxima persona que pregunte por fechas.')}
   </section>`;
@@ -310,6 +316,7 @@ function renderConnections() {
     <div class="connection-badge ${isSecure ? 'ready' : ''}"><span>${isSecure ? '✓' : '○'}</span><b>${isSecure ? 'Lista para instalar' : 'Modo local'}</b><small>${isSecure ? 'Abierta desde una dirección segura' : 'Para instalarla como app debe publicarse en HTTPS'}</small></div>
   </section>
   <section class="connections-grid">
+    ${connectionCard('⌂','Página pública de reservas', state.settings.bookingEndpoint ? 'Recepción automática' : 'Lista para compartir', state.settings.bookingEndpoint?'ready':'manual', `Una vidriera propia de Villa il Fanale para mostrar la casa, calcular una estadía y recibir solicitudes.`, `<button class="primary-button" data-action="openPublicSite">Abrir página pública</button>${state.settings.bookingEndpoint&&state.settings.bookingAdminKey?`<button class="ghost-button" data-action="syncPublicRequests">Buscar solicitudes</button>`:''}`)}
     ${connectionCard('▦','Airbnb Calendar', imported ? `${imported} eventos importados` : 'Todavía sin importar', imported?'ready':'manual', `Descargá el calendario de Airbnb como archivo .ics y cargalo acá. También podés guardar el enlace privado para tenerlo a mano.`, `<button class="primary-button" data-action="importCalendar">Importar archivo .ics</button>${state.settings.airbnbIcsUrl?`<button class="ghost-button" data-action="syncAirbnb">Intentar sincronizar</button>`:''}`)}
     ${connectionCard('','Calendario de Apple','Importación manual','manual','En Calendario de Apple elegí Archivo → Exportar → Exportar y seleccioná el archivo .ics desde la aplicación.',`<button class="primary-button" data-action="importCalendar">Importar desde Apple</button>`)}
     ${connectionCard('◉','Meta Business Suite','Facebook + Instagram','ready','Abrí la bandeja unificada para leer y responder mensajes de Facebook e Instagram. Desde ahí registrás la consulta en la app.',`<button class="primary-button" data-action="openMeta">Abrir bandeja de Meta</button>`)}
@@ -325,6 +332,9 @@ function renderConnections() {
         ${field('Facebook de Villa il Fanale','facebookUrl','url','https://facebook.com/...',false,undefined,undefined,state.settings.facebookUrl)}
         ${field('Instagram de Villa il Fanale','instagramUrl','url','https://instagram.com/...',false,undefined,undefined,state.settings.instagramUrl)}
         ${field('Enlace privado .ics de Airbnb','airbnbIcsUrl','url','https://www.airbnb.com/calendar/ical/...',false,undefined,undefined,state.settings.airbnbIcsUrl)}
+        ${field('Dirección de la página pública','publicSiteUrl','url','https://.../reservar/',false,undefined,undefined,state.settings.publicSiteUrl)}
+        ${field('Receptor automático de solicitudes','bookingEndpoint','url','Enlace de Google Apps Script',false,undefined,undefined,state.settings.bookingEndpoint)}
+        ${field('Clave privada de recepción','bookingAdminKey','password','Sólo para esta aplicación',false,undefined,undefined,state.settings.bookingAdminKey)}
       </div>
       <div class="form-actions"><button class="primary-button">Guardar configuración</button></div>
     </form>
@@ -338,7 +348,7 @@ function renderConnections() {
       <input type="file" id="backup-file" accept="application/json,.json" hidden>
     </div>
   </section>
-  <section class="card security-note"><span class="security-icon">⌁</span><div><b>Conexión completa con mensajes</b><p>Leer conversaciones directamente dentro de esta app requiere permisos de Meta y un pequeño servidor seguro. No lo activo ahora porque complicaría la aplicación y podría generar costos. La bandeja oficial de Meta ya reúne Facebook e Instagram sin costo.</p></div></section>`;
+  <section class="card security-note"><span class="security-icon">⌁</span><div><b>Automatización sin costos mensuales</b><p>La página pública puede recibir solicitudes mediante una hoja privada de Google. Para activarla hará falta una única autorización de tu cuenta; Facebook, Instagram y WhatsApp mantienen sus propias limitaciones y permisos.</p></div></section>`;
 }
 
 function connectionCard(icon,title,status,tone,body,actions) {
@@ -369,6 +379,53 @@ async function syncAirbnbCalendar() {
   } catch {
     toast('Airbnb bloqueó la lectura directa. Descargá el archivo .ics e importalo manualmente.');
   }
+}
+
+async function syncPublicRequests(silent = false) {
+  const endpoint = state.settings.bookingEndpoint;
+  const key = state.settings.bookingAdminKey;
+  if (!endpoint || !key) {
+    if (!silent) toast('Primero configurá el receptor de solicitudes en Conexiones');
+    return;
+  }
+  try {
+    const url = new URL(endpoint);
+    url.searchParams.set('action', 'list');
+    url.searchParams.set('key', key);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('request');
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || 'request');
+    let added = 0;
+    (payload.requests || []).forEach(item => {
+      const externalRequestId = String(item.id || '');
+      if (!externalRequestId || state.leads.some(lead => lead.externalRequestId === externalRequestId)) return;
+      state.leads.push({
+        id: uid(), externalRequestId,
+        created: normalizeRequestDate(item.createdAt) || todayISO(),
+        name: item.name || 'Consulta desde la web', phone: String(item.phone || ''),
+        guests: Number(item.guests || 1), checkin: normalizeRequestDate(item.checkin), checkout: normalizeRequestDate(item.checkout),
+        channel: 'Página web', status: 'nueva', nightly: 0,
+        notes: [item.message, item.estimatedTotal ? `Estimación web: ${money(Number(item.estimatedTotal))}` : ''].filter(Boolean).join(' · ')
+      });
+      added += 1;
+    });
+    saveState();
+    if (!silent) {
+      toast(added ? `${added} solicitud${added===1?' nueva':'es nuevas'} recibida${added===1?'':'s'}` : 'No hay solicitudes nuevas');
+      navigate('consultas');
+    } else if (route === 'consultas' && added) render();
+  } catch {
+    if (!silent) toast('No se pudo consultar la página pública. Revisá la conexión.');
+  }
+}
+
+function normalizeRequestDate(value) {
+  if (!value) return '';
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : localISO(date);
 }
 
 async function installApplication() {
