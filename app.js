@@ -581,7 +581,8 @@ async function syncPublicRequests(silent = false) {
     const url = new URL(endpoint);
     url.searchParams.set('action', 'list');
     url.searchParams.set('key', key);
-    const response = await fetch(url);
+    url.searchParams.set('_', Date.now());
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) throw new Error('request');
     const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || 'request');

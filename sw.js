@@ -1,4 +1,4 @@
-const CACHE = 'villa-il-fanale-v10';
+const CACHE = 'villa-il-fanale-v11';
 const CORE = [
   './', './index.html', './styles.css', './app.js', './manifest.json',
   './assets/icon-192.png', './assets/icon-512.png', './assets/farol.png',
