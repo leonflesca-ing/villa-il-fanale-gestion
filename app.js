@@ -61,6 +61,25 @@ let selectedPhoto = 'assets/jardin-entrada.png';
 let installPrompt = null;
 let pendingPublicImages = {};
 
+function defaultGalleryItems() {
+  return [
+    { id: 'gallery-1', image: '../assets/jardin-flores.png', caption: 'Jardín' },
+    { id: 'gallery-2', image: '../assets/altillo.png', caption: 'Altillo matrimonial' },
+    { id: 'gallery-3', image: '../assets/asador.png', caption: 'Asador' },
+    { id: 'gallery-4', image: '../assets/galeria.png', caption: 'Galería' },
+    { id: 'gallery-5', image: '../assets/rincon.png', caption: 'Rincones con historia' }
+  ];
+}
+
+function publicGalleryItems(content = state.publicContent || defaultState.publicContent) {
+  if (Array.isArray(content.galleryItems)) return content.galleryItems;
+  return defaultGalleryItems().map((item, index) => ({
+    ...item,
+    image: content[`gallery${index + 1}Image`] || item.image,
+    caption: content[`gallery${index + 1}Caption`] || item.caption
+  }));
+}
+
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -191,6 +210,7 @@ function bindPage() {
   if (publicEditorForm) publicEditorForm.addEventListener('submit', savePublicDraft);
   document.querySelectorAll('[data-image-slot]').forEach(button => button.addEventListener('click', () => document.querySelector(`[data-image-input="${button.dataset.imageSlot}"]`)?.click()));
   document.querySelectorAll('[data-image-input]').forEach(input => input.addEventListener('change', () => handlePublicImageSelected(input)));
+  document.querySelectorAll('[data-remove-gallery-item]').forEach(button => button.addEventListener('click', () => removePublicGalleryItem(button.dataset.removeGalleryItem)));
   const backupFile = document.querySelector('#backup-file');
   if (backupFile) backupFile.addEventListener('change', importBackup);
 }
@@ -219,7 +239,8 @@ function handleAction(action, id) {
     syncAirbnb: syncAirbnbCalendar, installApp: installApplication,
     exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click(),
     publishPublicPage: publishPublicPage,
-    previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin
+    previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin,
+    addPublicGalleryItem: addPublicGalleryItem
   };
   actions[action]?.();
 }
@@ -353,9 +374,10 @@ function renderContent() {
 
 function renderPublicEditor() {
   const content = state.publicContent || defaultState.publicContent;
+  const galleryItems = publicGalleryItems(content);
   return `<section class="editor-intro card"><div><span class="eyebrow">EDITOR DEL SITIO</span><h2>Tu página, sin tocar código</h2><p class="muted">Modificá el contenido, guardá un borrador y publicalo cuando estés conforme. Los visitantes sólo ven la última versión publicada.</p></div><div class="editor-status"><span class="dot"></span><div><b>Acceso verificado</b><small>Cuenta ${GITHUB_OWNER}</small></div></div></section>
   <form id="public-editor-form" class="page-editor">
-    <div class="card editor-sidebar"><span class="eyebrow">EDITOR COMPLETO</span><h3>Todos los contenidos</h3><p class="muted">Podés cambiar los textos, precios y las nueve fotografías del sitio. Guardá primero un borrador y publicá sólo cuando estés conforme.</p><a href="#editor-portada">Portada</a><a href="#editor-historia">Historia</a><a href="#editor-galeria">Galería</a><a href="#editor-servicios">Servicios</a><a href="#editor-normas">Normas</a><a href="#editor-ubicacion">Ubicación</a><a href="#editor-reservas">Reservas</a><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
+    <div class="card editor-sidebar"><span class="eyebrow">EDITOR COMPLETO</span><h3>Todos los contenidos</h3><p class="muted">Podés cambiar los textos, precios y las fotografías del sitio. Guardá primero un borrador y publicá sólo cuando estés conforme.</p><a href="#editor-portada">Portada</a><a href="#editor-historia">Historia</a><a href="#editor-galeria">Galería</a><a href="#editor-servicios">Servicios</a><a href="#editor-normas">Normas</a><a href="#editor-ubicacion">Ubicación</a><a href="#editor-reservas">Reservas</a><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
     <div class="editor-fields">
       <section class="card" id="editor-portada"><div class="card-header"><div><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></div></div><div class="form-grid">
         ${field('Texto superior','heroEyebrow','text','ALPA CORRAL · CÓRDOBA',true,undefined,undefined,content.heroEyebrow)}
@@ -372,17 +394,12 @@ function renderPublicEditor() {
         ${field('Leyenda pequeña de la foto','featureCaptionSmall','text','El corazón de la casa',true,undefined,undefined,content.featureCaptionSmall)}
         ${field('Leyenda principal de la foto','featureCaption','text','Un único espacio…',true,undefined,undefined,content.featureCaption)}
       </div>${editorImage('featureImage','Imagen interior de ancho completo',content.featureImage)}</section>
-      <section class="card" id="editor-galeria"><div class="card-header"><div><span class="eyebrow">ESPACIOS Y GALERÍA</span><h2>Recorrido fotográfico</h2></div></div><div class="form-grid">
+      <section class="card" id="editor-galeria"><div class="card-header"><div><span class="eyebrow">ESPACIOS Y GALERÍA</span><h2>Recorrido fotográfico</h2></div><button type="button" class="secondary-button" data-action="addPublicGalleryItem">＋ Agregar foto</button></div><div class="form-grid">
         ${field('Texto superior','spacesEyebrow','text','RECORRÉ VILLA IL FANALE',true,undefined,undefined,content.spacesEyebrow)}
         ${field('Título','spacesTitle','text','Rincones que invitan',true,undefined,undefined,content.spacesTitle)}
         ${field('Continuación','spacesSubtitle','text','a quedarse.',true,undefined,undefined,content.spacesSubtitle)}
         ${editorTextArea('Descripción','spacesDescription',content.spacesDescription,3)}
-        ${field('Nombre foto 1','gallery1Caption','text','Jardín',true,undefined,undefined,content.gallery1Caption)}
-        ${field('Nombre foto 2','gallery2Caption','text','Altillo matrimonial',true,undefined,undefined,content.gallery2Caption)}
-        ${field('Nombre foto 3','gallery3Caption','text','Asador',true,undefined,undefined,content.gallery3Caption)}
-        ${field('Nombre foto 4','gallery4Caption','text','Galería',true,undefined,undefined,content.gallery4Caption)}
-        ${field('Nombre foto 5','gallery5Caption','text','Rincones con historia',true,undefined,undefined,content.gallery5Caption)}
-      </div><div class="editor-gallery">${editorImage('gallery1Image','Foto 1 · Jardín',content.gallery1Image)}${editorImage('gallery2Image','Foto 2 · Altillo',content.gallery2Image)}${editorImage('gallery3Image','Foto 3 · Asador',content.gallery3Image)}${editorImage('gallery4Image','Foto 4 · Galería',content.gallery4Image)}${editorImage('gallery5Image','Foto 5 · Rincón',content.gallery5Image)}</div></section>
+      </div><div class="editor-gallery dynamic-gallery">${galleryItems.map((item,index)=>editorGalleryItem(item,index)).join('')}</div><p class="muted gallery-help">Podés agregar, eliminar, cambiar fotografía y editar el nombre visible de cada imagen. Se publican cuando tocás “Publicar cambios”.</p></section>
       <section class="card" id="editor-servicios"><div class="card-header"><div><span class="eyebrow">SERVICIOS</span><h2>Equipamiento y comodidades</h2></div></div><div class="form-grid">
         ${field('Texto superior','detailsEyebrow','text','TODO LO NECESARIO',true,undefined,undefined,content.detailsEyebrow)}${field('Título','detailsTitle','text','Preparada para',true,undefined,undefined,content.detailsTitle)}${field('Continuación','detailsSubtitle','text','disfrutarla.',true,undefined,undefined,content.detailsSubtitle)}
         ${[1,2,3,4,5,6].map(i=>`${field(`Servicio ${i}` ,`amenity${i}Title`,'text','',true,undefined,undefined,content[`amenity${i}Title`])}${field(`Descripción ${i}`,`amenity${i}Description`,'text','',true,undefined,undefined,content[`amenity${i}Description`])}`).join('')}
@@ -413,13 +430,33 @@ function renderPublicEditor() {
 
 function editorTextArea(label,name,value,rows=3) { return `<label class="field full"><span>${label}</span><textarea name="${name}" rows="${rows}" required>${esc(value)}</textarea></label>`; }
 function editorImage(key,label,src) { const preview=src?.startsWith('../')?src.slice(3):src; return `<div class="editor-image editor-image-slot"><img id="preview-${key}" src="${esc(preview||'assets/loft.png')}" alt="${esc(label)}"><div><b>${esc(label)}</b><p class="muted">JPG, PNG o WebP.</p><button type="button" class="secondary-button" data-image-slot="${key}">Cambiar fotografía</button><small id="file-${key}">${esc(src||'Imagen actual')}</small></div><input type="file" data-image-input="${key}" accept="image/jpeg,image/png,image/webp" hidden></div>`; }
+function editorGalleryItem(item,index) {
+  const key = `galleryItem-${item.id}`;
+  const preview = item.image?.startsWith('../') ? item.image.slice(3) : item.image;
+  return `<article class="gallery-editor-card">
+    <img id="preview-${key}" src="${esc(preview || 'assets/jardin-entrada.png')}" alt="${esc(item.caption || `Foto ${index + 1}`)}">
+    <label class="field"><span>Nombre visible</span><input name="galleryItemCaption:${esc(item.id)}" type="text" required value="${esc(item.caption || `Foto ${index + 1}`)}"></label>
+    <div class="row-actions gallery-editor-actions"><button type="button" class="secondary-button" data-image-slot="${key}">Cambiar fotografía</button><button type="button" class="danger-link" data-remove-gallery-item="${esc(item.id)}">Eliminar</button></div>
+    <small id="file-${key}">${esc(item.image || 'Imagen actual')}</small>
+    <input type="file" data-image-input="${key}" accept="image/jpeg,image/png,image/webp" hidden>
+  </article>`;
+}
 
 function capturePublicEditor() {
   const form = document.querySelector('#public-editor-form');
   if (!form || !form.reportValidity()) return false;
   const values = Object.fromEntries(new FormData(form));
+  const currentGallery = publicGalleryItems();
+  const galleryItems = currentGallery.map(item => ({
+    id: item.id,
+    image: item.image,
+    caption: values[`galleryItemCaption:${item.id}`] || item.caption || 'Foto'
+  }));
+  Object.keys(values).forEach(key => {
+    if (key.startsWith('galleryItemCaption:')) delete values[key];
+  });
   ['singleNight','regularNight','highNight'].forEach(key => values[key] = Number(values[key]));
-  state.publicContent = { ...(state.publicContent || defaultState.publicContent), ...values };
+  state.publicContent = { ...(state.publicContent || defaultState.publicContent), ...values, galleryItems };
   return true;
 }
 
@@ -440,6 +477,24 @@ function handlePublicImageSelected(input) {
   if (name) name.textContent = `${file.name} · lista para publicar`;
 }
 
+function addPublicGalleryItem() {
+  if (!capturePublicEditor()) return;
+  const currentGallery = publicGalleryItems();
+  const galleryItems = [...currentGallery, { id: uid(), image: '../assets/jardin-entrada.png', caption: `Nueva foto ${currentGallery.length + 1}` }];
+  state.publicContent.galleryItems = galleryItems;
+  saveState('Foto agregada al recorrido');
+  render();
+  setTimeout(() => document.querySelector('#editor-galeria')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+}
+
+function removePublicGalleryItem(id) {
+  if (!capturePublicEditor()) return;
+  state.publicContent.galleryItems = publicGalleryItems().filter(item => item.id !== id);
+  Object.keys(pendingPublicImages).forEach(key => { if (key === `galleryItem-${id}`) delete pendingPublicImages[key]; });
+  saveState('Foto eliminada del recorrido');
+  render();
+}
+
 async function publishPublicPage() {
   if (!capturePublicEditor()) return;
   const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
@@ -450,7 +505,12 @@ async function publishPublicPage() {
       const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
       const path = `assets/pagina-${key}-${Date.now()}.${extension}`;
       await githubPutFile(path, bytesToBase64(new Uint8Array(await file.arrayBuffer())), `Actualizar ${key} de la página`, token);
-      state.publicContent[key] = `../${path}`;
+      if (key.startsWith('galleryItem-')) {
+        const id = key.replace('galleryItem-', '');
+        state.publicContent.galleryItems = publicGalleryItems().map(item => item.id === id ? { ...item, image: `../${path}` } : item);
+      } else {
+        state.publicContent[key] = `../${path}`;
+      }
     }
     pendingPublicImages = {};
     const json = `${JSON.stringify(state.publicContent, null, 2)}\n`;

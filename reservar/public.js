@@ -13,6 +13,13 @@ let siteContent = {
   featureImage: '../assets/loft.png', featureCaptionSmall: 'El corazón de la casa', featureCaption: 'Un único espacio, muchas maneras de habitarlo.',
   spacesEyebrow: 'RECORRÉ VILLA IL FANALE', spacesTitle: 'Rincones que invitan', spacesSubtitle: 'a quedarse.', spacesDescription: 'La casa fue pensada para una estadía independiente y tranquila: cocina equipada, espacios amplios y un jardín para disfrutar la vida serrana.',
   gallery1Image: '../assets/jardin-flores.png', gallery1Caption: 'Jardín', gallery2Image: '../assets/altillo.png', gallery2Caption: 'Altillo matrimonial', gallery3Image: '../assets/asador.png', gallery3Caption: 'Asador', gallery4Image: '../assets/galeria.png', gallery4Caption: 'Galería', gallery5Image: '../assets/rincon.png', gallery5Caption: 'Rincones con historia',
+  galleryItems: [
+    { id: 'gallery-1', image: '../assets/jardin-flores.png', caption: 'Jardín' },
+    { id: 'gallery-2', image: '../assets/altillo.png', caption: 'Altillo matrimonial' },
+    { id: 'gallery-3', image: '../assets/asador.png', caption: 'Asador' },
+    { id: 'gallery-4', image: '../assets/galeria.png', caption: 'Galería' },
+    { id: 'gallery-5', image: '../assets/rincon.png', caption: 'Rincones con historia' }
+  ],
   detailsImage: '../assets/cartel.png', detailsEyebrow: 'TODO LO NECESARIO', detailsTitle: 'Preparada para', detailsSubtitle: 'disfrutarla.',
   amenity1Title: 'Hasta 5 personas', amenity1Description: 'Una cama matrimonial y tres individuales.', amenity2Title: 'Cocina equipada', amenity2Description: 'Cocina a gas, heladera, microondas y vajilla completa.', amenity3Title: 'Amplia galería', amenity3Description: 'Un espacio exterior cómodo para comer y descansar.', amenity4Title: 'Jardín arbolado', amenity4Description: 'Sombra, flores y tranquilidad serrana.', amenity5Title: 'Calefacción', amenity5Description: 'Más confort para estadías frescas en las sierras.', amenity6Title: 'Alojamiento Airbnb privado', amenity6Description: 'Casa completa, independiente y sin compartir con otros huéspedes.',
   rulesEyebrow: 'ANTES DE VENIR', rulesTitle: 'Información clara,', rulesSubtitle: 'estadías tranquilas.', rule1Value: '15:00', rule1Title: 'Ingreso', rule1Description: 'Check-in desde las 15 h, coordinado personalmente.', rule2Value: '11:00', rule2Title: 'Salida', rule2Description: 'Check-out hasta las 11 h.', rule3Value: '2+', rule3Title: 'Noches', rule3Description: 'Estadía mínima habitual de dos noches.', rule4Value: '50%', rule4Title: 'Seña', rule4Description: 'La reserva se confirma al recibir el 50%.', importantText: 'No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.',
@@ -82,6 +89,20 @@ function isHighSeason(a,b){for(let date=new Date(`${a}T12:00:00`),end=new Date(`
 function localISO(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 function money(value){return new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(value);}
 function dateLabel(value){return new Intl.DateTimeFormat('es-AR',{day:'numeric',month:'long',year:'numeric'}).format(new Date(`${value}T12:00:00`));}
+function esc(value){return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));}
+function galleryItems() {
+  if (Array.isArray(siteContent.galleryItems)) return siteContent.galleryItems;
+  return [1,2,3,4,5].map(index => ({
+    id: `gallery-${index}`,
+    image: siteContent[`gallery${index}Image`],
+    caption: siteContent[`gallery${index}Caption`]
+  })).filter(item => item.image);
+}
+function galleryClass(index) {
+  if (index === 0) return 'gallery-tall';
+  if (index === 3) return 'gallery-wide';
+  return '';
+}
 
 async function loadSiteContent() {
   try {
@@ -104,6 +125,10 @@ async function loadSiteContent() {
   Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element && value) element.textContent = value; });
   const images = { 'feature-image':siteContent.featureImage, 'gallery-1-image':siteContent.gallery1Image, 'gallery-2-image':siteContent.gallery2Image, 'gallery-3-image':siteContent.gallery3Image, 'gallery-4-image':siteContent.gallery4Image, 'gallery-5-image':siteContent.gallery5Image, 'details-image':siteContent.detailsImage, 'booking-image':siteContent.bookingImage };
   Object.entries(images).forEach(([id,src]) => { const image=document.getElementById(id); if(image&&src) image.src=src; });
+  const gallery = document.querySelector('#gallery-grid');
+  if (gallery) {
+    gallery.innerHTML = galleryItems().map((item,index) => `<figure class="${galleryClass(index)}"><img src="${esc(item.image)}" alt="${esc(item.caption || 'Foto de Villa il Fanale')}"><figcaption>${esc(item.caption || 'Villa il Fanale')}</figcaption></figure>`).join('');
+  }
   if (siteContent.heroImage) document.querySelector('.public-hero').style.backgroundImage = `url("${siteContent.heroImage.replace(/"/g,'')}")`;
   const map = document.querySelector('#location-map');
   if (map && siteContent.locationMapQuery) map.src = `https://www.google.com/maps?q=${encodeURIComponent(siteContent.locationMapQuery)}&output=embed`;

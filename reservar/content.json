@@ -26,6 +26,33 @@
   "gallery4Caption": "Galería",
   "gallery5Image": "../assets/rincon.png",
   "gallery5Caption": "Rincones con historia",
+  "galleryItems": [
+    {
+      "id": "gallery-1",
+      "image": "../assets/jardin-flores.png",
+      "caption": "Jardín"
+    },
+    {
+      "id": "gallery-2",
+      "image": "../assets/altillo.png",
+      "caption": "Altillo matrimonial"
+    },
+    {
+      "id": "gallery-3",
+      "image": "../assets/asador.png",
+      "caption": "Asador"
+    },
+    {
+      "id": "gallery-4",
+      "image": "../assets/galeria.png",
+      "caption": "Galería"
+    },
+    {
+      "id": "gallery-5",
+      "image": "../assets/rincon.png",
+      "caption": "Rincones con historia"
+    }
+  ],
   "detailsImage": "../assets/cartel.png",
   "detailsEyebrow": "TODO LO NECESARIO",
   "detailsTitle": "Preparada para",

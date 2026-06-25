@@ -168,6 +168,12 @@ h3 { font-size: 16px; margin-bottom: 6px; }
 .editor-image-slot { margin-top:18px; padding-top:18px; border-top:1px solid var(--line); }
 .editor-gallery { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
 .editor-gallery .editor-image { grid-template-columns:1fr; padding:14px; border:1px solid var(--line); border-radius:16px; }
+.gallery-editor-card { display:grid; gap:12px; padding:14px; border:1px solid var(--line); border-radius:16px; background:#fff; }
+.gallery-editor-card > img { width:100%; aspect-ratio:16/10; border-radius:14px; object-fit:cover; background:var(--cream); }
+.gallery-editor-card small { color:var(--muted); word-break:break-all; font-size:11px; }
+.gallery-editor-actions { justify-content:flex-start; }
+.gallery-editor-actions .danger-link { border:0; background:transparent; color:#8a302a; padding:7px 9px; font-weight:700; }
+.gallery-help { margin-top:12px; }
 .editor-publish { position:sticky; bottom:18px; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 20px; border:1px solid #b9c9bb; border-radius:18px; background:rgba(255,253,248,.95); backdrop-filter:blur(15px); box-shadow:0 14px 40px rgba(30,52,39,.14); }
 .editor-publish span { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
 
