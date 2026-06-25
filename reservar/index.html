@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Italiana&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="public.css?v=2">
+  <link rel="stylesheet" href="public.css?v=4">
 </head>
 <body>
   <header class="site-header" id="header">
@@ -22,6 +22,7 @@
       <a href="#historia">La villa</a>
       <a href="#espacios">Espacios</a>
       <a href="#detalles">Detalles</a>
+      <a href="#ubicacion">Ubicación</a>
       <a href="#reservar" class="nav-cta">Consultar fechas</a>
     </nav>
   </header>
@@ -85,10 +86,10 @@
         <div class="amenities">
           <div><span>⌂</span><p><b id="amenity-1-title">Hasta 5 personas</b><span id="amenity-1-description">Una cama matrimonial y tres individuales.</span></p></div>
           <div><span>✦</span><p><b id="amenity-2-title">Cocina equipada</b><span id="amenity-2-description">Cocina a gas, heladera, microondas y vajilla completa.</span></p></div>
-          <div><span>♨</span><p><b id="amenity-3-title">Parrilla y galería</b><span id="amenity-3-description">Espacios exteriores para compartir y descansar.</span></p></div>
+          <div><span>♨</span><p><b id="amenity-3-title">Amplia galería</b><span id="amenity-3-description">Un espacio exterior cómodo para comer y descansar.</span></p></div>
           <div><span>❋</span><p><b id="amenity-4-title">Jardín arbolado</b><span id="amenity-4-description">Sombra, flores y tranquilidad serrana.</span></p></div>
-          <div><span>◌</span><p><b id="amenity-5-title">Ventilación</b><span id="amenity-5-description">Ventilador de techo y ventilador portátil.</span></p></div>
-          <div><span>☼</span><p><b id="amenity-6-title">Zona semicéntrica</b><span id="amenity-6-description">Cercana al pueblo, en un entorno tranquilo.</span></p></div>
+          <div><span>◌</span><p><b id="amenity-5-title">Calefacción</b><span id="amenity-5-description">Más confort para estadías frescas en las sierras.</span></p></div>
+          <div><span>☼</span><p><b id="amenity-6-title">Alojamiento Airbnb privado</b><span id="amenity-6-description">Casa completa, independiente y sin compartir con otros huéspedes.</span></p></div>
         </div>
       </div>
     </section>
@@ -103,7 +104,19 @@
         <article><span id="rule-3-value">2+</span><h3 id="rule-3-title">Noches</h3><p id="rule-3-description">Estadía mínima habitual de dos noches.</p></article>
         <article><span id="rule-4-value">50%</span><h3 id="rule-4-title">Seña</h3><p id="rule-4-description">La reserva se confirma al recibir el 50%.</p></article>
       </div>
-      <div class="rule-note"><b>Importante</b><span id="important-text">No se admiten mascotas · No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.</span></div>
+      <div class="rule-note"><b>Importante</b><span id="important-text">No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.</span></div>
+    </section>
+
+    <section class="location-section section" id="ubicacion">
+      <div class="location-copy">
+        <span class="public-eyebrow" id="location-eyebrow">UBICACIÓN</span>
+        <h2><span id="location-title">Zona semicéntrica</span><br><span id="location-subtitle">de Alpa Corral.</span></h2>
+        <p id="location-description">Villa il Fanale se encuentra sobre calle Los Ligustros, en una zona semicéntrica de Alpa Corral: cerca del movimiento del pueblo, pero con la calma propia de una casa serrana.</p>
+        <a class="button button-primary location-button" id="location-map-link" href="https://maps.app.goo.gl/26wKytrGYrjpThU98" target="_blank" rel="noopener">Abrir en Google Maps <span>→</span></a>
+      </div>
+      <div class="location-map">
+        <iframe id="location-map" title="Ubicación de Villa il Fanale en Alpa Corral" src="https://www.google.com/maps?q=Calle%20Los%20Ligustros%2C%20Alpa%20Corral%2C%20C%C3%B3rdoba&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
     </section>
 
     <section class="booking-section" id="reservar">
@@ -144,6 +157,6 @@
   </footer>
 
   <script src="config.js"></script>
-  <script src="public.js?v=3"></script>
+  <script src="public.js?v=4"></script>
 </body>
 </html>
