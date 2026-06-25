@@ -79,7 +79,7 @@ const navItems = [
   ['conexiones','⌁','Conexiones'], ['tareas','✓','Tareas'], ['finanzas','$','Ingresos'],
   ['inventario','◇','Inventario'], ['contenido','✦','Contenido'], ['pagina','▤','Editar página'], ['asistente','✺','Asistente']
 ];
-const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','tareas','pagina','asistente'].includes(item[0]));
+const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','conexiones','tareas','pagina','asistente'].includes(item[0]));
 const meta = {
   inicio: ['HOY EN LA VILLA', () => greeting()], consultas: ['OPORTUNIDADES', 'Consultas y reservas'],
   calendario: ['DISPONIBILIDAD', 'Calendario'], tareas: ['PREPARACIÓN', 'Tareas de la casa'],
