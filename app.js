@@ -5,6 +5,8 @@ const GITHUB_REPO = 'villa-il-fanale-gestion';
 const PUBLIC_IMAGE_MAX_SIDE = 1800;
 const PUBLIC_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
 const PUBLIC_IMAGE_QUALITY = 0.84;
+const GITHUB_READ_TIMEOUT_MS = 18000;
+const GITHUB_WRITE_TIMEOUT_MS = 60000;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const money = value => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value || 0);
@@ -148,7 +150,7 @@ function renderAccessGate(message = '') {
 
 async function validateAdminToken(token) {
   if (!token) return false;
-  try { const response = await fetch('https://api.github.com/user', { headers: githubHeaders(token) }); const profile = await response.json(); return response.ok && profile.login === GITHUB_OWNER; }
+  try { const response = await fetchWithTimeout('https://api.github.com/user', { headers: githubHeaders(token) }, GITHUB_READ_TIMEOUT_MS); const profile = await response.json(); return response.ok && profile.login === GITHUB_OWNER; }
   catch { return false; }
 }
 
@@ -513,6 +515,7 @@ async function publishPublicPage() {
   const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
   const button = document.querySelector('[data-action="publishPublicPage"]');
   if (button) { button.disabled = true; button.textContent = 'Publicando…'; }
+  let published = false;
   try {
     if (!token) throw new Error('Tu sesión de GitHub se cerró. Volvé a ingresar la clave privada.');
     if (!(await validateAdminToken(token))) throw new Error('La clave de GitHub venció o ya no pertenece a la cuenta propietaria. Cerrá sesión privada e ingresá una clave nueva.');
@@ -537,22 +540,40 @@ async function publishPublicPage() {
     state.settings.regularNight = state.publicContent.regularNight;
     state.settings.highNight = state.publicContent.highNight;
     saveState();
-    toast('Cambios publicados. La página se actualizará en unos minutos.');
-    if (button) button.textContent = 'Publicado ✓';
+    published = true;
+    toast('Cambios publicados. Si cambiaste fotos, esperá un minuto y recargá la página pública para verlas definitivas.');
+    if (button) {
+      button.textContent = 'Publicado ✓';
+      setTimeout(() => { button.disabled = false; button.textContent = 'Publicar cambios'; }, 2200);
+    }
   } catch (error) {
     toast(error.message || 'No se pudo publicar. Revisá los permisos de la clave.');
-    if (button) { button.disabled = false; button.textContent = 'Publicar cambios'; }
+  } finally {
+    if (button && !published) { button.disabled = false; button.textContent = 'Publicar cambios'; }
   }
 }
 
 async function githubPutFile(path, content, message, token) {
   const endpoint = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
-  const current = await fetch(endpoint, { headers: githubHeaders(token) });
+  const current = await fetchWithTimeout(endpoint, { headers: githubHeaders(token) }, GITHUB_READ_TIMEOUT_MS);
   let sha;
   if (current.ok) sha = (await current.json()).sha;
   else if (current.status !== 404) throw new Error(await githubErrorMessage(current, 'No se pudo leer el sitio en GitHub.'));
-  const response = await fetch(endpoint, { method:'PUT', headers:{ ...githubHeaders(token), 'Content-Type':'application/json' }, body:JSON.stringify({ message, content, branch:'main', ...(sha?{sha}:{}) }) });
+  const response = await fetchWithTimeout(endpoint, { method:'PUT', headers:{ ...githubHeaders(token), 'Content-Type':'application/json' }, body:JSON.stringify({ message, content, branch:'main', ...(sha?{sha}:{}) }) }, GITHUB_WRITE_TIMEOUT_MS);
   if (!response.ok) throw new Error(await githubErrorMessage(response, 'GitHub no pudo guardar este cambio.'));
+}
+
+async function fetchWithTimeout(resource, options = {}, timeout = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('GitHub tardó demasiado en responder. Revisá la conexión y volvé a intentar; no se borró tu borrador.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function githubErrorMessage(response, fallback) {
@@ -775,7 +796,7 @@ function importBackup(event) {
 
 function registerServiceWorker() {
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(registration => registration.update()).catch(() => {});
   }
 }
 

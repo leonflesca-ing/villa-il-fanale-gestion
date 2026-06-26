@@ -3,6 +3,7 @@ const form = document.querySelector('#booking-form');
 const success = document.querySelector('#success-panel');
 const estimate = document.querySelector('#estimate');
 const today = new Date().toISOString().slice(0, 10);
+const assetVersion = Date.now().toString();
 let siteContent = {
   heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
   heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
@@ -90,6 +91,10 @@ function localISO(date){return `${date.getFullYear()}-${String(date.getMonth()+1
 function money(value){return new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(value);}
 function dateLabel(value){return new Intl.DateTimeFormat('es-AR',{day:'numeric',month:'long',year:'numeric'}).format(new Date(`${value}T12:00:00`));}
 function esc(value){return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));}
+function publicImageSrc(src) {
+  if (!src) return src;
+  return src.includes('assets/pagina-') ? `${src}${src.includes('?') ? '&' : '?'}v=${assetVersion}` : src;
+}
 function galleryItems() {
   if (Array.isArray(siteContent.galleryItems)) return siteContent.galleryItems;
   return [1,2,3,4,5].map(index => ({
@@ -124,12 +129,12 @@ async function loadSiteContent() {
   };
   Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element && value) element.textContent = value; });
   const images = { 'feature-image':siteContent.featureImage, 'gallery-1-image':siteContent.gallery1Image, 'gallery-2-image':siteContent.gallery2Image, 'gallery-3-image':siteContent.gallery3Image, 'gallery-4-image':siteContent.gallery4Image, 'gallery-5-image':siteContent.gallery5Image, 'details-image':siteContent.detailsImage, 'booking-image':siteContent.bookingImage };
-  Object.entries(images).forEach(([id,src]) => { const image=document.getElementById(id); if(image&&src) image.src=src; });
+  Object.entries(images).forEach(([id,src]) => { const image=document.getElementById(id); if(image&&src) image.src=publicImageSrc(src); });
   const gallery = document.querySelector('#gallery-grid');
   if (gallery) {
-    gallery.innerHTML = galleryItems().map((item,index) => `<figure class="${galleryClass(index)}"><img src="${esc(item.image)}" alt="${esc(item.caption || 'Foto de Villa il Fanale')}"><figcaption>${esc(item.caption || 'Villa il Fanale')}</figcaption></figure>`).join('');
+    gallery.innerHTML = galleryItems().map((item,index) => `<figure class="${galleryClass(index)}"><img src="${esc(publicImageSrc(item.image))}" alt="${esc(item.caption || 'Foto de Villa il Fanale')}"><figcaption>${esc(item.caption || 'Villa il Fanale')}</figcaption></figure>`).join('');
   }
-  if (siteContent.heroImage) document.querySelector('.public-hero').style.backgroundImage = `url("${siteContent.heroImage.replace(/"/g,'')}")`;
+  if (siteContent.heroImage) document.querySelector('.public-hero').style.backgroundImage = `url("${publicImageSrc(siteContent.heroImage).replace(/"/g,'')}")`;
   const map = document.querySelector('#location-map');
   if (map && siteContent.locationMapQuery) map.src = `https://www.google.com/maps?q=${encodeURIComponent(siteContent.locationMapQuery)}&output=embed`;
   const mapLink = document.querySelector('#location-map-link');
@@ -137,3 +142,11 @@ async function loadSiteContent() {
   document.querySelector('#public-rate').textContent = money(Number(siteContent.regularNight));
   updateEstimate();
 }
+
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('../sw.js').then(registration => registration.update()).catch(() => {});
+  }
+}
+
+registerServiceWorker();
