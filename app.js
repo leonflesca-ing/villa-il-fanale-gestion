@@ -2,6 +2,9 @@ const STORAGE_KEY = 'villa-il-fanale-v1';
 const ADMIN_SESSION_KEY = 'villa-il-fanale-github-session';
 const GITHUB_OWNER = 'leonflesca-ing';
 const GITHUB_REPO = 'villa-il-fanale-gestion';
+const PUBLIC_IMAGE_MAX_SIDE = 1800;
+const PUBLIC_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+const PUBLIC_IMAGE_QUALITY = 0.84;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const money = value => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value || 0);
@@ -466,15 +469,25 @@ function savePublicDraft(event) {
   saveState('Borrador guardado en esta computadora');
 }
 
-function handlePublicImageSelected(input) {
+async function handlePublicImageSelected(input) {
   const file = input.files?.[0];
   if (!file) return;
   const key = input.dataset.imageInput;
-  pendingPublicImages[key] = file;
-  const preview = document.querySelector(`#preview-${key}`);
-  if (preview) preview.src = URL.createObjectURL(file);
-  const name = document.querySelector(`#file-${key}`);
-  if (name) name.textContent = `${file.name} · lista para publicar`;
+  try {
+    const name = document.querySelector(`#file-${key}`);
+    if (name) name.textContent = `Optimizando ${file.name}…`;
+    const preparedFile = await preparePublicImage(file);
+    pendingPublicImages[key] = preparedFile;
+    const preview = document.querySelector(`#preview-${key}`);
+    if (preview) preview.src = URL.createObjectURL(preparedFile);
+    if (name) name.textContent = `${preparedFile.name} · ${formatFileSize(preparedFile.size)} · lista para publicar`;
+    if (preparedFile.size < file.size) toast(`Imagen optimizada: ${formatFileSize(file.size)} → ${formatFileSize(preparedFile.size)}`);
+  } catch (error) {
+    input.value = '';
+    const name = document.querySelector(`#file-${key}`);
+    if (name) name.textContent = 'No se pudo preparar esta imagen';
+    toast(error.message || 'No se pudo preparar la imagen. Probá con JPG, PNG o WebP.');
+  }
 }
 
 function addPublicGalleryItem() {
@@ -501,7 +514,10 @@ async function publishPublicPage() {
   const button = document.querySelector('[data-action="publishPublicPage"]');
   if (button) { button.disabled = true; button.textContent = 'Publicando…'; }
   try {
+    if (!token) throw new Error('Tu sesión de GitHub se cerró. Volvé a ingresar la clave privada.');
+    if (!(await validateAdminToken(token))) throw new Error('La clave de GitHub venció o ya no pertenece a la cuenta propietaria. Cerrá sesión privada e ingresá una clave nueva.');
     for (const [key,file] of Object.entries(pendingPublicImages)) {
+      if (file.size > PUBLIC_IMAGE_MAX_BYTES) throw new Error(`${file.name} sigue siendo muy pesada (${formatFileSize(file.size)}). Probá con una imagen menor a ${formatFileSize(PUBLIC_IMAGE_MAX_BYTES)}.`);
       const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
       const path = `assets/pagina-${key}-${Date.now()}.${extension}`;
       await githubPutFile(path, bytesToBase64(new Uint8Array(await file.arrayBuffer())), `Actualizar ${key} de la página`, token);
@@ -534,14 +550,67 @@ async function githubPutFile(path, content, message, token) {
   const current = await fetch(endpoint, { headers: githubHeaders(token) });
   let sha;
   if (current.ok) sha = (await current.json()).sha;
-  else if (current.status !== 404) throw new Error('No se pudo leer el sitio en GitHub.');
+  else if (current.status !== 404) throw new Error(await githubErrorMessage(current, 'No se pudo leer el sitio en GitHub.'));
   const response = await fetch(endpoint, { method:'PUT', headers:{ ...githubHeaders(token), 'Content-Type':'application/json' }, body:JSON.stringify({ message, content, branch:'main', ...(sha?{sha}:{}) }) });
-  if (!response.ok) throw new Error(response.status === 403 ? 'La clave necesita permiso “Contents: Read and write”.' : 'GitHub no pudo guardar este cambio.');
+  if (!response.ok) throw new Error(await githubErrorMessage(response, 'GitHub no pudo guardar este cambio.'));
+}
+
+async function githubErrorMessage(response, fallback) {
+  let detail = '';
+  try {
+    const payload = await response.clone().json();
+    detail = payload?.message ? ` Detalle: ${payload.message}` : '';
+  } catch {}
+  if (response.status === 401) return 'La clave de GitHub no es válida o venció. Cerrá sesión privada e ingresá una clave nueva.';
+  if (response.status === 403) return 'La clave necesita permiso “Contents: Read and write” para este repositorio, o GitHub bloqueó temporalmente la operación.' + detail;
+  if (response.status === 404) return 'GitHub no encuentra el repositorio con esta clave. Revisá que la clave tenga acceso a villa-il-fanale-gestion.' + detail;
+  if (response.status === 409) return 'GitHub recibió cambios al mismo tiempo. Esperá unos segundos y tocá “Publicar cambios” de nuevo.';
+  if (response.status === 413 || response.status === 422) return 'GitHub rechazó el archivo o el cambio. Si era una foto, probá con una imagen más liviana.' + detail;
+  return `${fallback} Código ${response.status}.${detail}`;
 }
 
 function githubHeaders(token) { return { Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' }; }
 function textToBase64(text) { return bytesToBase64(new TextEncoder().encode(text)); }
-function bytesToBase64(bytes) { let binary=''; bytes.forEach(byte => binary += String.fromCharCode(byte)); return btoa(binary); }
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  return btoa(binary);
+}
+async function preparePublicImage(file) {
+  if (!file.type.startsWith('image/')) throw new Error('El archivo elegido no parece ser una imagen.');
+  if (file.type === 'image/gif') throw new Error('Por ahora la página no admite GIF. Usá JPG, PNG o WebP.');
+  const image = await loadImageFile(file);
+  const scale = Math.min(1, PUBLIC_IMAGE_MAX_SIDE / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fffdf8';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', PUBLIC_IMAGE_QUALITY));
+  if (!blob) throw new Error('No se pudo optimizar esta imagen. Probá con otra foto.');
+  const name = `${file.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'foto'}.jpg`;
+  const prepared = new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+  return prepared.size <= file.size || file.size > PUBLIC_IMAGE_MAX_BYTES ? prepared : file;
+}
+function loadImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No pude leer esta imagen. Probá con JPG, PNG o WebP.')); };
+    image.src = url;
+  });
+}
+function formatFileSize(bytes) {
+  if (!bytes) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1).replace('.0','')} MB`;
+}
 function previewPublicPage() { window.open(`${state.settings.publicSiteUrl}?v=${Date.now()}`, '_blank'); }
 function logoutAdmin() { sessionStorage.removeItem(ADMIN_SESSION_KEY); location.reload(); }
 function postCopy(type) {
@@ -960,6 +1029,6 @@ function importICSText(text){const chunks=text.split('BEGIN:VEVENT').slice(1);le
 function matchICS(chunk,key){const line=chunk.split(/\r?\n/).find(l=>l.startsWith(key));return line?line.split(':').slice(1).join(':').replace(/\\,/g,','):'';}
 function parseICSDate(value){if(!value)return'';const v=value.slice(0,8);return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;}
 
-function toast(message){const root=document.querySelector('#toast-root');root.innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>root.innerHTML='',2600);}
+function toast(message){const root=document.querySelector('#toast-root');root.innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>root.innerHTML='',Math.min(8500, Math.max(2800, String(message).length * 55)));}
 
 init();
