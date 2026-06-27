@@ -69,8 +69,8 @@
   "bookingDescription": "Completá los datos básicos. La solicitud no bloquea el calendario: te responderemos con disponibilidad y valor definitivo. La reserva queda confirmada únicamente con la seña.",
   "bookingImage": "../assets/frente.png",
   "footerLocation": "Alpa Corral · Córdoba · Argentina",
-  "regularNight": 60000,
-  "highNight": 65000,
+  "regularNight": 65000,
+  "highNight": 70000,
   "singleNight": 100000,
   "galleryItems": [
     {
