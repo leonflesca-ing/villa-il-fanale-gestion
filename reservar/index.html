@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Italiana&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="public.css?v=4">
+  <link rel="stylesheet" href="public.css?v=5">
 </head>
 <body>
   <header class="site-header" id="header">
@@ -70,11 +70,11 @@
         <p id="spaces-description">La casa fue pensada para una estadía independiente y tranquila: cocina equipada, espacios amplios y un jardín para disfrutar la vida serrana.</p>
       </div>
       <div class="gallery-grid" id="gallery-grid">
-        <figure class="gallery-tall"><img id="gallery-1-image" src="../assets/jardin-flores.png" alt="Jardín con flores"><figcaption id="gallery-1-caption">Jardín</figcaption></figure>
-        <figure><img id="gallery-2-image" src="../assets/altillo.png" alt="Cama matrimonial en el altillo"><figcaption id="gallery-2-caption">Altillo matrimonial</figcaption></figure>
-        <figure><img id="gallery-3-image" src="../assets/asador.png" alt="Asador en el jardín"><figcaption id="gallery-3-caption">Asador</figcaption></figure>
-        <figure class="gallery-wide"><img id="gallery-4-image" src="../assets/galeria.png" alt="Galería exterior"><figcaption id="gallery-4-caption">Galería</figcaption></figure>
-        <figure><img id="gallery-5-image" src="../assets/rincon.png" alt="Rincón interior"><figcaption id="gallery-5-caption">Rincones con historia</figcaption></figure>
+        <figure class="gallery-tall" role="button" tabindex="0" data-gallery-open data-src="../assets/jardin-flores.png" data-caption="Jardín"><img id="gallery-1-image" src="../assets/jardin-flores.png" alt="Jardín con flores"><figcaption id="gallery-1-caption">Jardín</figcaption></figure>
+        <figure role="button" tabindex="0" data-gallery-open data-src="../assets/altillo.png" data-caption="Altillo matrimonial"><img id="gallery-2-image" src="../assets/altillo.png" alt="Cama matrimonial en el altillo"><figcaption id="gallery-2-caption">Altillo matrimonial</figcaption></figure>
+        <figure role="button" tabindex="0" data-gallery-open data-src="../assets/asador.png" data-caption="Asador"><img id="gallery-3-image" src="../assets/asador.png" alt="Asador en el jardín"><figcaption id="gallery-3-caption">Asador</figcaption></figure>
+        <figure class="gallery-wide" role="button" tabindex="0" data-gallery-open data-src="../assets/galeria.png" data-caption="Galería"><img id="gallery-4-image" src="../assets/galeria.png" alt="Galería exterior"><figcaption id="gallery-4-caption">Galería</figcaption></figure>
+        <figure role="button" tabindex="0" data-gallery-open data-src="../assets/rincon.png" data-caption="Rincones con historia"><img id="gallery-5-image" src="../assets/rincon.png" alt="Rincón interior"><figcaption id="gallery-5-caption">Rincones con historia</figcaption></figure>
       </div>
     </section>
 
@@ -130,6 +130,7 @@
       <div class="booking-panel">
         <form id="booking-form">
           <div class="form-intro"><span>PASO 1 DE 1</span><h3>Solicitud de disponibilidad</h3></div>
+          <label class="public-hp" aria-hidden="true">Sitio web<input name="website" tabindex="-1" autocomplete="off"></label>
           <label>Nombre y apellido<input name="name" required autocomplete="name" placeholder="¿Cómo te llamás?"></label>
           <div class="public-form-grid">
             <label>WhatsApp<input name="phone" required inputmode="tel" placeholder="Ej.: 358…"></label>
@@ -144,11 +145,18 @@
           <p class="privacy">Sólo usamos estos datos para responder tu consulta. Los datos de DNI se solicitan después de confirmar.</p>
         </form>
         <div class="success-panel" id="success-panel" hidden>
-          <span class="success-icon">✓</span><h3>Solicitud preparada</h3><p>Vamos a abrir WhatsApp con todos los datos. Revisá el mensaje y envialo para que podamos responderte.</p><a id="whatsapp-link" class="button button-primary" target="_blank" rel="noopener">Continuar en WhatsApp</a>
+          <span class="success-icon">✓</span><h3>Formulario enviado</h3><p>Recibimos tu solicitud de disponibilidad. Te responderemos a la brevedad para confirmar fechas, precio final y condiciones.</p><small>¿Tenés una duda en particular?</small><a id="whatsapp-link" class="button button-primary" target="_blank" rel="noopener">Contactarse con el anfitrión</a>
         </div>
       </div>
     </section>
   </main>
+  <div class="gallery-lightbox" id="gallery-lightbox" hidden>
+    <button class="gallery-lightbox-close" type="button" aria-label="Cerrar foto">×</button>
+    <figure>
+      <img id="lightbox-image" src="" alt="">
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
 
   <footer>
     <div class="footer-brand"><img src="../assets/farol.png" alt=""><div><b>VILLA IL FANALE</b><span>Loft serrano</span></div></div>
@@ -157,6 +165,6 @@
   </footer>
 
   <script src="config.js"></script>
-  <script src="public.js?v=6"></script>
+  <script src="public.js?v=7"></script>
 </body>
 </html>

@@ -4,6 +4,8 @@ const success = document.querySelector('#success-panel');
 const estimate = document.querySelector('#estimate');
 const today = new Date().toISOString().slice(0, 10);
 const assetVersion = Date.now().toString();
+const formStartedAt = Date.now();
+const MAX_MESSAGE_LENGTH = 500;
 let siteContent = {
   heroEyebrow: 'ALPA CORRAL · CÓRDOBA', heroTitle: 'Una casa con alma', heroSubtitle: 'de sierra.',
   heroDescription: 'Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.',
@@ -59,9 +61,23 @@ function updateEstimate() {
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
+  const submitButton = form.querySelector('button[type="submit"]');
   const values = Object.fromEntries(new FormData(form));
-  if (values.checkout <= values.checkin) return alert('La fecha de salida debe ser posterior al ingreso.');
-  const request = { id: `WEB-${Date.now().toString(36).toUpperCase()}`, createdAt: new Date().toISOString(), ...values, status: 'nueva' };
+  const validationError = validateRequest(values);
+  if (validationError) return alert(validationError);
+  const request = {
+    id: `WEB-${Date.now().toString(36).toUpperCase()}`,
+    createdAt: new Date().toISOString(),
+    name: values.name.trim(),
+    phone: values.phone.trim(),
+    guests: values.guests,
+    checkin: values.checkin,
+    checkout: values.checkout,
+    message: values.message.trim(),
+    website: values.website || '',
+    formStartedAt,
+    status: 'nueva'
+  };
   const nights = nightCount(values.checkin, values.checkout);
   const nightly = nights === 1 ? Number(siteContent.singleNight) : isHighSeason(values.checkin, values.checkout) ? Number(siteContent.highNight) : Number(siteContent.regularNight);
   request.estimatedTotal = nights * nightly;
@@ -69,21 +85,36 @@ form.addEventListener('submit', async event => {
   let automatic = false;
   if (config.bookingEndpoint) {
     try {
+      if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Enviando solicitud…'; }
       await fetch(config.bookingEndpoint, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: new URLSearchParams(request) });
       automatic = true;
     } catch { automatic = false; }
+    finally { if (submitButton) { submitButton.disabled = false; submitButton.innerHTML = 'Enviar solicitud <span>→</span>'; } }
   }
 
-  const message = `Hola, quiero consultar disponibilidad en Villa il Fanale.\n\nNombre: ${values.name}\nFechas: ${dateLabel(values.checkin)} al ${dateLabel(values.checkout)}\nPersonas: ${values.guests}\nEstimación orientativa: ${money(request.estimatedTotal)}${values.message?`\nComentario: ${values.message}`:''}\n\nCódigo de solicitud: ${request.id}`;
+  const message = `Hola, envié una solicitud de disponibilidad desde la página de Villa il Fanale y tengo una duda puntual.\n\nNombre: ${request.name}\nFechas: ${dateLabel(request.checkin)} al ${dateLabel(request.checkout)}\nPersonas: ${request.guests}\nCódigo de solicitud: ${request.id}`;
   const whatsapp = `https://wa.me/${config.whatsapp}?text=${encodeURIComponent(message)}`;
   document.querySelector('#whatsapp-link').href = whatsapp;
-  document.querySelector('#whatsapp-link').textContent = automatic ? 'También avisar por WhatsApp' : 'Continuar en WhatsApp';
-  success.querySelector('h3').textContent = automatic ? 'Solicitud recibida' : 'Solicitud preparada';
-  success.querySelector('p').textContent = automatic ? 'La consulta quedó registrada. Te responderemos para confirmar disponibilidad y precio.' : 'Vamos a abrir WhatsApp con todos los datos. Revisá el mensaje y envialo para que podamos responderte.';
-  form.hidden = true; success.hidden = false;
+  document.querySelector('#whatsapp-link').textContent = 'Contactarse con el anfitrión';
+  success.querySelector('h3').textContent = automatic ? 'Formulario enviado' : 'No pudimos confirmar el envío';
+  success.querySelector('p').textContent = automatic ? 'Recibimos tu solicitud de disponibilidad. Te responderemos a la brevedad para confirmar fechas, precio final y condiciones.' : 'No pudimos registrar tu solicitud automáticamente. Si querés, contactanos por WhatsApp con los datos cargados.';
+  success.querySelector('small').textContent = automatic ? '¿Tenés una duda en particular?' : 'Podés enviarnos la consulta por WhatsApp.';
+  form.hidden = true;
+  success.hidden = false;
   success.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  setTimeout(() => { window.location.href = whatsapp; }, 500);
 });
+
+function validateRequest(values) {
+  if (values.website) return 'No se pudo enviar la solicitud.';
+  if (Date.now() - Number(values.formStartedAt || formStartedAt) < 2500) return 'Esperá unos segundos y volvé a intentar.';
+  if (!values.name?.trim()) return 'Ingresá tu nombre y apellido.';
+  if (!values.phone?.trim()) return 'Ingresá un WhatsApp de contacto.';
+  const guests = Number(values.guests);
+  if (!Number.isInteger(guests) || guests < 1 || guests > 5) return 'La casa admite entre 1 y 5 huéspedes.';
+  if (!values.checkin || !values.checkout || values.checkout <= values.checkin) return 'La fecha de salida debe ser posterior al ingreso.';
+  if ((values.message || '').length > MAX_MESSAGE_LENGTH) return `El comentario puede tener hasta ${MAX_MESSAGE_LENGTH} caracteres.`;
+  return '';
+}
 
 function nightCount(a,b){return Math.max(0,Math.round((new Date(`${b}T12:00:00`)-new Date(`${a}T12:00:00`))/86400000));}
 function isHighSeason(a,b){for(let date=new Date(`${a}T12:00:00`),end=new Date(`${b}T12:00:00`);date<end;date.setDate(date.getDate()+1)){if([10,11,0,1].includes(date.getMonth()))return true;}return false;}
@@ -109,6 +140,12 @@ function galleryClass(index) {
   return '';
 }
 
+function galleryFigure(item,index) {
+  const src = publicImageSrc(item.image);
+  const caption = item.caption || 'Villa il Fanale';
+  return `<figure class="${galleryClass(index)}" role="button" tabindex="0" data-gallery-open data-src="${esc(src)}" data-caption="${esc(caption)}"><img src="${esc(src)}" alt="${esc(caption)}"><figcaption>${esc(caption)}</figcaption></figure>`;
+}
+
 async function loadSiteContent() {
   try {
     const response = await fetch(`content.json?v=${Date.now()}`);
@@ -132,7 +169,8 @@ async function loadSiteContent() {
   Object.entries(images).forEach(([id,src]) => { const image=document.getElementById(id); if(image&&src) image.src=publicImageSrc(src); });
   const gallery = document.querySelector('#gallery-grid');
   if (gallery) {
-    gallery.innerHTML = galleryItems().map((item,index) => `<figure class="${galleryClass(index)}"><img src="${esc(publicImageSrc(item.image))}" alt="${esc(item.caption || 'Foto de Villa il Fanale')}"><figcaption>${esc(item.caption || 'Villa il Fanale')}</figcaption></figure>`).join('');
+    gallery.innerHTML = galleryItems().map(galleryFigure).join('');
+    bindGalleryLightbox();
   }
   if (siteContent.heroImage) document.querySelector('.public-hero').style.backgroundImage = `url("${publicImageSrc(siteContent.heroImage).replace(/"/g,'')}")`;
   const map = document.querySelector('#location-map');
@@ -150,3 +188,45 @@ function registerServiceWorker() {
 }
 
 registerServiceWorker();
+
+function bindGalleryLightbox() {
+  document.querySelectorAll('[data-gallery-open]').forEach(figure => {
+    figure.addEventListener('click', () => openGalleryLightbox(figure.dataset.src, figure.dataset.caption));
+    figure.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openGalleryLightbox(figure.dataset.src, figure.dataset.caption);
+      }
+    });
+  });
+}
+
+function openGalleryLightbox(src, caption) {
+  const lightbox = document.querySelector('#gallery-lightbox');
+  const image = document.querySelector('#lightbox-image');
+  const label = document.querySelector('#lightbox-caption');
+  if (!lightbox || !image || !label) return;
+  image.src = src || '';
+  image.alt = caption || 'Foto de Villa il Fanale';
+  label.textContent = caption || '';
+  lightbox.hidden = false;
+  document.body.classList.add('lightbox-open');
+  lightbox.querySelector('.gallery-lightbox-close')?.focus();
+}
+
+function closeGalleryLightbox() {
+  const lightbox = document.querySelector('#gallery-lightbox');
+  const image = document.querySelector('#lightbox-image');
+  if (!lightbox) return;
+  lightbox.hidden = true;
+  if (image) image.src = '';
+  document.body.classList.remove('lightbox-open');
+}
+
+document.querySelector('#gallery-lightbox')?.addEventListener('click', event => {
+  if (event.target.id === 'gallery-lightbox' || event.target.closest('.gallery-lightbox-close')) closeGalleryLightbox();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeGalleryLightbox();
+});
