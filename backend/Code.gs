@@ -106,6 +106,12 @@ function formatMoney_(value) {
   return `$${amount.toLocaleString('es-AR')}`;
 }
 
+function authorizeMail() {
+  const email = PropertiesService.getScriptProperties().getProperty('NOTIFY_EMAIL');
+  if (!email) throw new Error('Missing NOTIFY_EMAIL script property');
+  MailApp.getRemainingDailyQuota();
+}
+
 function json_(value) {
   return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
 }
