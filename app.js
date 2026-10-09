@@ -103,6 +103,16 @@ function normalizeState(saved) {
     next.tasks = (next.tasks || []).filter(task => !task.reservationId);
     next.meta.autoTasksRemoved = true;
   }
+  if (!next.meta.contentFix1) {
+    // Textos acordados: salida 11 h con posibilidad de extender y mascotas a consultar.
+    Object.assign(next.publicContent, {
+      rule2Description: 'Check-out hasta las 11 h. Si necesitás salir más tarde, consultanos.',
+      importantText: 'Mascotas: consultar previamente · No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.'
+    });
+    if (/^Climatizacion$/i.test(next.publicContent.amenity5Title || '')) { next.publicContent.amenity5Title = 'Climatización'; next.publicContent.amenity5Description = 'Ventilación y calefacción.'; }
+    next.settings.checkout = '11:00';
+    next.meta.contentFix1 = true;
+  }
   return next;
 }
 function saveState(message, options = {}) {
