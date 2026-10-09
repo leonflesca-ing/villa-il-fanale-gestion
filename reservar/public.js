@@ -64,7 +64,9 @@ form.addEventListener('submit', async event => {
   const submitButton = form.querySelector('button[type="submit"]');
   const values = Object.fromEntries(new FormData(form));
   const validationError = validateRequest(values);
-  if (validationError) return alert(validationError);
+  const errorBox = document.querySelector('#form-error');
+  if (validationError) { if (errorBox) { errorBox.textContent = validationError; errorBox.hidden = false; errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } else alert(validationError); return; }
+  if (errorBox) errorBox.hidden = true;
   const request = {
     id: `WEB-${Date.now().toString(36).toUpperCase()}`,
     createdAt: new Date().toISOString(),
@@ -134,16 +136,21 @@ function galleryItems() {
     caption: siteContent[`gallery${index}Caption`]
   })).filter(item => item.image);
 }
-function galleryClass(index) {
-  if (index === 0) return 'gallery-tall';
-  if (index === 3) return 'gallery-wide';
+function galleryClass(index, total) {
+  if (total >= 4 && index === 0) return 'gallery-tall';
+  if (total >= 4 && index === 3) return 'gallery-wide';
+  if (index === total - 1 && total >= 4) {
+    const cells = total + 2;
+    if (cells % 3 === 2) return 'gallery-wide';
+    if (cells % 3 === 1) return 'gallery-full';
+  }
   return '';
 }
 
-function galleryFigure(item,index) {
+function galleryFigure(item,index,list) {
   const src = publicImageSrc(item.image);
   const caption = item.caption || 'Villa il Fanale';
-  return `<figure class="${galleryClass(index)}" role="button" tabindex="0" data-gallery-open data-src="${esc(src)}" data-caption="${esc(caption)}"><img src="${esc(src)}" alt="${esc(caption)}"><figcaption>${esc(caption)}</figcaption></figure>`;
+  return `<figure class="${galleryClass(index, list.length)}" role="button" tabindex="0" data-gallery-open data-index="${index}" data-src="${esc(src)}" data-caption="${esc(caption)}"><img src="${esc(src)}" alt="${esc(caption)}" loading="lazy" decoding="async"><figcaption>${esc(caption)}</figcaption></figure>`;
 }
 
 async function loadSiteContent() {
@@ -189,44 +196,97 @@ function registerServiceWorker() {
 
 registerServiceWorker();
 
+let lightboxIndex = 0;
+function galleryFigures() { return [...document.querySelectorAll('[data-gallery-open]')]; }
+
 function bindGalleryLightbox() {
-  document.querySelectorAll('[data-gallery-open]').forEach(figure => {
-    figure.addEventListener('click', () => openGalleryLightbox(figure.dataset.src, figure.dataset.caption));
+  galleryFigures().forEach((figure, index) => {
+    figure.addEventListener('click', () => openGalleryLightbox(index));
     figure.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        openGalleryLightbox(figure.dataset.src, figure.dataset.caption);
-      }
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openGalleryLightbox(index); }
     });
   });
 }
 
-function openGalleryLightbox(src, caption) {
+function openGalleryLightbox(index) {
+  const figures = galleryFigures();
   const lightbox = document.querySelector('#gallery-lightbox');
   const image = document.querySelector('#lightbox-image');
   const label = document.querySelector('#lightbox-caption');
-  if (!lightbox || !image || !label) return;
-  image.src = src || '';
-  image.alt = caption || 'Foto de Villa il Fanale';
-  label.textContent = caption || '';
+  const count = document.querySelector('#lightbox-count');
+  if (!lightbox || !image || !figures.length) return;
+  lightboxIndex = (index + figures.length) % figures.length;
+  const figure = figures[lightboxIndex];
+  image.style.animation = 'none'; void image.offsetWidth; image.style.animation = '';
+  image.src = figure.dataset.src || '';
+  image.alt = figure.dataset.caption || 'Foto de Villa il Fanale';
+  if (label) label.textContent = figure.dataset.caption || '';
+  if (count) count.textContent = `${lightboxIndex + 1} / ${figures.length}`;
+  const wasHidden = lightbox.hidden;
   lightbox.hidden = false;
   document.body.classList.add('lightbox-open');
-  lightbox.querySelector('.gallery-lightbox-close')?.focus();
+  if (wasHidden) lightbox.querySelector('.gallery-lightbox-close')?.focus();
 }
 
 function closeGalleryLightbox() {
   const lightbox = document.querySelector('#gallery-lightbox');
   const image = document.querySelector('#lightbox-image');
-  if (!lightbox) return;
+  if (!lightbox || lightbox.hidden) return;
   lightbox.hidden = true;
   if (image) image.src = '';
   document.body.classList.remove('lightbox-open');
+  galleryFigures()[lightboxIndex]?.focus({ preventScroll: true });
 }
 
 document.querySelector('#gallery-lightbox')?.addEventListener('click', event => {
+  if (event.target.closest('.gallery-lightbox-nav.prev')) return openGalleryLightbox(lightboxIndex - 1);
+  if (event.target.closest('.gallery-lightbox-nav.next')) return openGalleryLightbox(lightboxIndex + 1);
   if (event.target.id === 'gallery-lightbox' || event.target.closest('.gallery-lightbox-close')) closeGalleryLightbox();
 });
 
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeGalleryLightbox();
+let touchStartX = null;
+document.querySelector('#gallery-lightbox')?.addEventListener('touchstart', event => { touchStartX = event.touches[0].clientX; }, { passive: true });
+document.querySelector('#gallery-lightbox')?.addEventListener('touchend', event => {
+  if (touchStartX === null) return;
+  const delta = event.changedTouches[0].clientX - touchStartX; touchStartX = null;
+  if (Math.abs(delta) > 45) openGalleryLightbox(lightboxIndex + (delta < 0 ? 1 : -1));
 });
+
+document.addEventListener('keydown', event => {
+  const lightbox = document.querySelector('#gallery-lightbox');
+  if (!lightbox || lightbox.hidden) return;
+  if (event.key === 'Escape') closeGalleryLightbox();
+  if (event.key === 'ArrowRight') openGalleryLightbox(lightboxIndex + 1);
+  if (event.key === 'ArrowLeft') openGalleryLightbox(lightboxIndex - 1);
+});
+
+/* Cabecera, menú, WhatsApp y animaciones */
+(function enhancePage() {
+  const header = document.querySelector('#header');
+  const floatButton = document.querySelector('.whatsapp-float');
+  const onScroll = () => {
+    const y = window.scrollY;
+    header?.classList.toggle('scrolled', y > 40);
+    floatButton?.classList.toggle('visible', y > window.innerHeight * 0.7);
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  const toggle = document.querySelector('#menu-toggle');
+  const nav = document.querySelector('#public-nav');
+  const syncToggle = () => toggle?.setAttribute('aria-expanded', nav?.classList.contains('open') ? 'true' : 'false');
+  toggle?.addEventListener('click', () => setTimeout(syncToggle));
+  nav?.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setTimeout(syncToggle)));
+
+  const phone = config.whatsapp || '5493584849524';
+  const text = encodeURIComponent('Hola, quería consultar disponibilidad en Villa il Fanale.');
+  document.querySelectorAll('[data-whatsapp]').forEach(link => { link.href = `https://wa.me/${phone}?text=${text}`; });
+  const year = document.querySelector('#footer-year'); if (year) year.textContent = new Date().getFullYear();
+
+  const targets = document.querySelectorAll('.intro-title, .intro-copy, .section-heading, .details-content, .rules-grid, .rule-note, .location-copy, .location-map, .booking-copy > *:not(img), .booking-panel');
+  if (!('IntersectionObserver' in window)) return;
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (entry.isIntersecting) { entry.target.classList.add('in'); observer.unobserve(entry.target); }
+  }), { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  targets.forEach((element, index) => { element.classList.add('reveal'); element.style.transitionDelay = `${(index % 3) * 70}ms`; observer.observe(element); });
+})();

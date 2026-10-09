@@ -6,18 +6,26 @@
   <meta name="theme-color" content="#173b2b">
   <meta name="description" content="Villa il Fanale, loft serrano para hasta cinco personas en Alpa Corral, Córdoba.">
   <title>Villa il Fanale · Loft Serrano en Alpa Corral</title>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Villa il Fanale · Loft Serrano en Alpa Corral">
+  <meta property="og:description" content="Loft serrano para hasta cinco personas, con jardín, galería y asador en Alpa Corral, Córdoba.">
+  <meta property="og:image" content="../assets/jardin-entrada.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="../assets/icon-192.png">
+  <link rel="apple-touch-icon" href="../assets/icon-192.png">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"VacationRental","name":"Villa il Fanale · Loft Serrano","description":"Loft serrano para hasta cinco personas en Alpa Corral, Córdoba.","address":{"@type":"PostalAddress","streetAddress":"Los Ligustros","addressLocality":"Alpa Corral","addressRegion":"Córdoba","addressCountry":"AR"},"occupancy":{"@type":"QuantitativeValue","maxValue":5}}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Italiana&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="public.css?v=5">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Italiana&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="public.css?v=6">
 </head>
 <body>
   <header class="site-header" id="header">
     <a class="public-brand" href="#inicio" aria-label="Villa il Fanale, inicio">
-      <img src="../assets/farol.png" alt="">
+      <img src="../assets/farol-claro.png" alt="">
       <span><b>VILLA IL FANALE</b><small>Loft serrano · Alpa Corral</small></span>
     </a>
-    <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menú">☰</button>
+    <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menú" aria-expanded="false"><span></span><span></span></button>
     <nav id="public-nav">
       <a href="#historia">La villa</a>
       <a href="#espacios">Espacios</a>
@@ -39,6 +47,7 @@
           <a href="#espacios" class="text-link">Conocer la casa <span>→</span></a>
         </div>
       </div>
+      <a class="scroll-cue" href="#historia" aria-label="Bajar"><span></span></a>
       <div class="hero-facts">
         <div><b>5</b><span>huéspedes</span></div>
         <div><b>4</b><span>camas</span></div>
@@ -84,12 +93,12 @@
         <span class="public-eyebrow" id="details-eyebrow">TODO LO NECESARIO</span>
         <h2><span id="details-title">Preparada para</span><br><span id="details-subtitle">disfrutarla.</span></h2>
         <div class="amenities">
-          <div><span>⌂</span><p><b id="amenity-1-title">Hasta 5 personas</b><span id="amenity-1-description">Una cama matrimonial y tres individuales.</span></p></div>
-          <div><span>✦</span><p><b id="amenity-2-title">Cocina equipada</b><span id="amenity-2-description">Cocina a gas, heladera, microondas y vajilla completa.</span></p></div>
-          <div><span>♨</span><p><b id="amenity-3-title">Amplia galería</b><span id="amenity-3-description">Un espacio exterior cómodo para comer y descansar.</span></p></div>
-          <div><span>❋</span><p><b id="amenity-4-title">Jardín arbolado</b><span id="amenity-4-description">Sombra, flores y tranquilidad serrana.</span></p></div>
-          <div><span>◌</span><p><b id="amenity-5-title">Calefacción</b><span id="amenity-5-description">Más confort para estadías frescas en las sierras.</span></p></div>
-          <div><span>☼</span><p><b id="amenity-6-title">Alojamiento Airbnb privado</b><span id="amenity-6-description">Casa completa, independiente y sin compartir con otros huéspedes.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.2c2.3.2 4 1.8 4.6 4.8"/></svg></span><p><b id="amenity-1-title">Hasta 5 personas</b><span id="amenity-1-description">Una cama matrimonial y tres individuales.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 10l1.5-5h13L20 10"/><path d="M8 14h8"/></svg></span><p><b id="amenity-2-title">Cocina equipada</b><span id="amenity-2-description">Cocina a gas, heladera, microondas y vajilla completa.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 19l-1.5 3M16 19l1.5 3M9 7c0-1.5 1-1.5 1-3M12 7c0-1.5 1-1.5 1-3M15 7c0-1.5 1-1.5 1-3"/></svg></span><p><b id="amenity-3-title">Amplia galería</b><span id="amenity-3-description">Un espacio exterior cómodo para comer y descansar.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-6"/><path d="M12 15c-4.5 0-7-2.6-7-6a7 7 0 0 1 14 0c0 3.4-2.5 6-7 6z"/><path d="M12 15l-3-3M12 13l3-3"/></svg></span><p><b id="amenity-4-title">Jardín arbolado</b><span id="amenity-4-description">Sombra, flores y tranquilidad serrana.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c2 3.2 5 5.4 5 9.5A5 5 0 0 1 7 12.5C7 10 8.4 8.7 9.5 7.5c.3 1.7 1.1 2.7 2 3.2C11.8 8.3 11.4 5.6 12 3z"/></svg></span><p><b id="amenity-5-title">Calefacción</b><span id="amenity-5-description">Más confort para estadías frescas en las sierras.</span></p></div>
+          <div><span class="amenity-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0 1 13 0c0 4.9-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span><p><b id="amenity-6-title">Alojamiento Airbnb privado</b><span id="amenity-6-description">Casa completa, independiente y sin compartir con otros huéspedes.</span></p></div>
         </div>
       </div>
     </section>
@@ -129,7 +138,7 @@
       </div>
       <div class="booking-panel">
         <form id="booking-form">
-          <div class="form-intro"><span>PASO 1 DE 1</span><h3>Solicitud de disponibilidad</h3></div>
+          <div class="form-intro"><span>SIN COMPROMISO · RESPUESTA EN EL DÍA</span><h3>Solicitud de disponibilidad</h3></div>
           <label class="public-hp" aria-hidden="true">Sitio web<input name="website" tabindex="-1" autocomplete="off"></label>
           <label>Nombre y apellido<input name="name" required autocomplete="name" placeholder="¿Cómo te llamás?"></label>
           <div class="public-form-grid">
@@ -141,6 +150,7 @@
           <label>Comentario opcional<textarea name="message" placeholder="Contanos si viajan con niños o si necesitás saber algo más."></textarea></label>
           <div class="estimate" id="estimate"><span>Completá las fechas para ver una estimación.</span></div>
           <label class="public-check"><input type="checkbox" required><span>Entiendo que esto es una solicitud y que la reserva se confirma con la seña.</span></label>
+          <div class="form-error" id="form-error" role="alert" hidden></div>
           <button class="button button-primary" type="submit">Enviar solicitud <span>→</span></button>
           <p class="privacy">Sólo usamos estos datos para responder tu consulta. Los datos de DNI se solicitan después de confirmar.</p>
         </form>
@@ -152,19 +162,30 @@
   </main>
   <div class="gallery-lightbox" id="gallery-lightbox" hidden>
     <button class="gallery-lightbox-close" type="button" aria-label="Cerrar foto">×</button>
+    <button class="gallery-lightbox-nav prev" type="button" aria-label="Foto anterior">‹</button>
+    <button class="gallery-lightbox-nav next" type="button" aria-label="Foto siguiente">›</button>
     <figure>
       <img id="lightbox-image" src="" alt="">
-      <figcaption id="lightbox-caption"></figcaption>
+      <figcaption><span id="lightbox-caption"></span><small id="lightbox-count"></small></figcaption>
     </figure>
   </div>
 
   <footer>
-    <div class="footer-brand"><img src="../assets/farol.png" alt=""><div><b>VILLA IL FANALE</b><span>Loft serrano</span></div></div>
-    <p id="footer-location">Alpa Corral · Córdoba · Argentina</p>
-    <div class="footer-links"><a href="#reservar">Consultar fechas</a></div>
+    <div class="footer-main">
+      <div class="footer-brand"><img src="../assets/farol-claro.png" alt=""><div><b>VILLA IL FANALE</b><span>Loft serrano · desde 1981</span></div></div>
+      <nav class="footer-nav" aria-label="Secciones">
+        <a href="#historia">La villa</a><a href="#espacios">Espacios</a><a href="#detalles">Detalles</a><a href="#ubicacion">Ubicación</a><a href="#reservar">Consultar fechas</a>
+      </nav>
+      <div class="footer-contact">
+        <a class="footer-whatsapp" data-whatsapp target="_blank" rel="noopener">WhatsApp del anfitrión</a>
+        <a href="https://instagram.com/villailfanale" target="_blank" rel="noopener">Instagram · @villailfanale</a>
+      </div>
+    </div>
+    <div class="footer-bottom"><p id="footer-location">Alpa Corral · Córdoba · Argentina</p><p>© <span id="footer-year">2026</span> Villa il Fanale</p></div>
   </footer>
+  <a class="whatsapp-float" data-whatsapp target="_blank" rel="noopener" aria-label="Escribir por WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 0 0-7.6 13.2L3.2 20.8l4.5-1.2A8.8 8.8 0 1 0 12 3.2z"/><path d="M8.7 8.2c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.5l-.5.6c-.1.1-.2.3 0 .5.4.7 1 1.4 1.7 1.9.5.4 1 .6 1.3.8.2.1.3 0 .5-.1l.6-.7c.1-.2.3-.2.5-.1l1.6.8c.2.1.4.2.4.3 0 .4 0 1.1-.4 1.5-.4.5-1.2.9-1.9.8-1.1 0-2.6-.6-4-1.8-1.6-1.4-2.5-3-2.7-4-.2-.9.2-1.6.3-1.7z" class="fill"/></svg><span>Consultar</span></a>
 
   <script src="config.js"></script>
-  <script src="public.js?v=7"></script>
+  <script src="public.js?v=8"></script>
 </body>
 </html>
