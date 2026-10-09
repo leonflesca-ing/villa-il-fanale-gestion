@@ -69,8 +69,8 @@
   "bookingDescription": "Elegí tus fechas en el calendario y mirá el precio exacto al instante. Te confirmamos por WhatsApp y la reserva queda firme con la seña.",
   "bookingImage": "../assets/frente.png",
   "footerLocation": "Alpa Corral · Córdoba · Argentina",
-  "regularNight": 65000,
-  "highNight": 70000,
+  "regularNight": 75000,
+  "highNight": 80000,
   "singleNight": 100000,
   "galleryItems": [
     {
