@@ -65,8 +65,8 @@
   "locationMapQuery": "Calle Los Ligustros, Alpa Corral, Córdoba",
   "locationMapLink": "https://maps.app.goo.gl/26wKytrGYrjpThU98",
   "bookingEyebrow": "TU PRÓXIMA ESCAPADA",
-  "bookingTitle": "Consultá tus fechas.",
-  "bookingDescription": "Completá los datos básicos. La solicitud no bloquea el calendario: te responderemos con disponibilidad y valor definitivo. La reserva queda confirmada únicamente con la seña.",
+  "bookingTitle": "Reservá directo.",
+  "bookingDescription": "Elegí tus fechas en el calendario y mirá el precio exacto al instante. Te confirmamos por WhatsApp y la reserva queda firme con la seña.",
   "bookingImage": "../assets/frente.png",
   "footerLocation": "Alpa Corral · Córdoba · Argentina",
   "regularNight": 65000,
@@ -103,5 +103,10 @@
       "image": "../assets/pagina-galleryItem-mqvr5kkoe9cva-1782528056834.jpg",
       "caption": "Loft"
     }
-  ]
+  ],
+  "depositPercent": 50,
+  "near1": "Iglesia de Alpa Corral",
+  "near2": "Brasería El Alto",
+  "near3": "Museo Regional",
+  "near4": "Restaurante El Viejo Correo"
 }

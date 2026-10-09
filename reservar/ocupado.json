@@ -1,0 +1,7 @@
+{
+  "updatedAt": "2026-10-09T03:30:00.000Z",
+  "ranges": [
+    { "id": "franco", "start": "2026-10-10", "end": "2026-10-12", "source": "Booking.com" },
+    { "id": "hernan", "start": "2026-11-20", "end": "2026-11-23", "source": "Booking.com" }
+  ]
+}

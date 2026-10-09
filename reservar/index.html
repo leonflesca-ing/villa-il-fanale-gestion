@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Italiana&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="public.css?v=6">
+  <link rel="stylesheet" href="public.css?v=7">
 </head>
 <body>
   <header class="site-header" id="header">
@@ -31,7 +31,7 @@
       <a href="#espacios">Espacios</a>
       <a href="#detalles">Detalles</a>
       <a href="#ubicacion">Ubicación</a>
-      <a href="#reservar" class="nav-cta">Consultar fechas</a>
+      <a href="#reservar" class="nav-cta">Reservar</a>
     </nav>
   </header>
 
@@ -43,11 +43,15 @@
         <h1><span id="hero-title">Una casa con alma</span><br><i id="hero-subtitle">de sierra.</i></h1>
         <p id="hero-description">Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.</p>
         <div class="hero-buttons">
-          <a href="#reservar" class="button button-light">Consultar disponibilidad</a>
           <a href="#espacios" class="text-link">Conocer la casa <span>→</span></a>
         </div>
       </div>
-      <a class="scroll-cue" href="#historia" aria-label="Bajar"><span></span></a>
+      <form class="hero-booking" id="hero-booking" aria-label="Buscar disponibilidad">
+        <button type="button" class="hb-field" data-open-calendar><span>Llegada</span><b id="hb-in">Elegir fecha</b></button>
+        <button type="button" class="hb-field" data-open-calendar><span>Salida</span><b id="hb-out">Elegir fecha</b></button>
+        <label class="hb-field"><span>Huéspedes</span><select id="hb-guests" aria-label="Huéspedes"><option value="2">2 personas</option><option value="1">1 persona</option><option value="3">3 personas</option><option value="4">4 personas</option><option value="5">5 personas</option></select></label>
+        <button type="button" class="hb-go" data-open-calendar>Ver disponibilidad <span>→</span></button>
+      </form>
       <div class="hero-facts">
         <div><b>5</b><span>huéspedes</span></div>
         <div><b>4</b><span>camas</span></div>
@@ -116,6 +120,19 @@
       <div class="rule-note"><b>Importante</b><span id="important-text">No incluye ropa blanca · No se permiten fiestas ni fumar dentro de la casa.</span></div>
     </section>
 
+    <section class="nearby section" aria-labelledby="nearby-title">
+      <div class="section-heading compact">
+        <div><span class="public-eyebrow">A PASOS DE LA CASA</span><h2 id="nearby-title">Todo cerca,<br>sin perder la calma.</h2></div>
+        <p>Una ubicación cómoda para recorrer el pueblo caminando y volver a descansar al jardín.</p>
+      </div>
+      <ol class="nearby-list" id="nearby-list">
+        <li><b>1</b><span>cuadra</span><p id="near-1">Iglesia de Alpa Corral</p></li>
+        <li><b>½</b><span>cuadra</span><p id="near-2">Brasería El Alto</p></li>
+        <li><b>2</b><span>cuadras</span><p id="near-3">Museo Regional</p></li>
+        <li><b>3</b><span>cuadras</span><p id="near-4">Restaurante El Viejo Correo</p></li>
+      </ol>
+    </section>
+
     <section class="location-section section" id="ubicacion">
       <div class="location-copy">
         <span class="public-eyebrow" id="location-eyebrow">UBICACIÓN</span>
@@ -131,31 +148,47 @@
     <section class="booking-section" id="reservar">
       <div class="booking-copy">
         <span class="public-eyebrow" id="booking-eyebrow">TU PRÓXIMA ESCAPADA</span>
-        <h2 id="booking-title">Consultá tus fechas.</h2>
+        <h2 id="booking-title">Reservá directo.</h2>
         <p id="booking-description">Completá los datos básicos. La solicitud no bloquea el calendario: te responderemos con disponibilidad y valor definitivo. La reserva queda confirmada únicamente con la seña.</p>
-        <div class="rate-card"><span>Tarifa orientativa desde</span><b id="public-rate">$60.000</b><small>por noche · casa completa</small></div>
+        <div class="rate-card"><span>Desde</span><b id="public-rate">$60.000</b><small>por noche · casa completa</small></div>
+        <ul class="booking-perks"><li>Mejor precio que en las plataformas</li><li>Respuesta por WhatsApp en el día</li><li>Seña del 50% y el resto al llegar</li></ul>
         <img id="booking-image" src="../assets/frente.png" alt="Frente y galería de Villa il Fanale">
       </div>
       <div class="booking-panel">
-        <form id="booking-form">
-          <div class="form-intro"><span>SIN COMPROMISO · RESPUESTA EN EL DÍA</span><h3>Solicitud de disponibilidad</h3></div>
+        <form id="booking-form" novalidate>
+          <div class="form-intro"><span>RESERVÁ DIRECTO · SIN COMISIONES</span><h3>Elegí tus fechas</h3></div>
+          <ol class="booking-steps" aria-hidden="true"><li class="active" data-step="1">Fechas</li><li data-step="2">Tus datos</li><li data-step="3">Confirmación</li></ol>
           <label class="public-hp" aria-hidden="true">Sitio web<input name="website" tabindex="-1" autocomplete="off"></label>
-          <label>Nombre y apellido<input name="name" required autocomplete="name" placeholder="¿Cómo te llamás?"></label>
-          <div class="public-form-grid">
-            <label>WhatsApp<input name="phone" required inputmode="tel" placeholder="Ej.: 358…"></label>
-            <label>Personas<select name="guests" required><option value="">Elegir</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
-            <label>Ingreso<input name="checkin" type="date" required></label>
-            <label>Salida<input name="checkout" type="date" required></label>
+          <input type="hidden" name="checkin"><input type="hidden" name="checkout">
+
+          <div class="cal" id="availability-calendar">
+            <div class="cal-head">
+              <button type="button" class="cal-nav" data-cal="prev" aria-label="Mes anterior">‹</button>
+              <div class="cal-legend"><span><i class="lg-free"></i>Libre</span><span><i class="lg-busy"></i>Ocupado</span><span><i class="lg-sel"></i>Tu estadía</span></div>
+              <button type="button" class="cal-nav" data-cal="next" aria-label="Mes siguiente">›</button>
+            </div>
+            <div class="cal-months" id="cal-months"></div>
+            <p class="cal-hint" id="cal-hint">Tocá el día de llegada y después el de salida.</p>
           </div>
-          <label>Comentario opcional<textarea name="message" placeholder="Contanos si viajan con niños o si necesitás saber algo más."></textarea></label>
-          <div class="estimate" id="estimate"><span>Completá las fechas para ver una estimación.</span></div>
-          <label class="public-check"><input type="checkbox" required><span>Entiendo que esto es una solicitud y que la reserva se confirma con la seña.</span></label>
+
+          <div class="estimate" id="estimate"><span>Elegí tus fechas para ver el precio exacto.</span></div>
+
+          <fieldset class="guest-step" id="guest-step" disabled>
+            <label>Nombre y apellido<input name="name" required autocomplete="name" placeholder="¿Cómo te llamás?"></label>
+            <div class="public-form-grid">
+              <label>WhatsApp<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="Ej.: 358…"></label>
+              <label>Personas<select name="guests" required><option value="">Elegir</option><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></label>
+            </div>
+            <label>Correo electrónico <small>(opcional)</small><input name="email" type="email" autocomplete="email" placeholder="Para enviarte la confirmación"></label>
+            <label>Comentario opcional<textarea name="message" placeholder="Contanos si viajan con niños o mascotas, o a qué hora pensás llegar."></textarea></label>
+            <label class="public-check"><input type="checkbox" name="accept" required><span>Entiendo que la reserva queda confirmada al abonar la seña del <b id="deposit-percent">50%</b> por transferencia.</span></label>
+          </fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
-          <button class="button button-primary" type="submit">Enviar solicitud <span>→</span></button>
-          <p class="privacy">Sólo usamos estos datos para responder tu consulta. Los datos de DNI se solicitan después de confirmar.</p>
+          <button class="button button-primary" type="submit" id="booking-submit" disabled>Solicitar reserva <span>→</span></button>
+          <p class="privacy">Te respondemos por WhatsApp con la confirmación y los datos para la seña. Sin pagos online ni cargos ocultos.</p>
         </form>
         <div class="success-panel" id="success-panel" hidden>
-          <span class="success-icon">✓</span><h3>Formulario enviado</h3><p>Recibimos tu solicitud de disponibilidad. Te responderemos a la brevedad para confirmar fechas, precio final y condiciones.</p><small>¿Tenés una duda en particular?</small><a id="whatsapp-link" class="button button-primary" target="_blank" rel="noopener">Contactarse con el anfitrión</a>
+          <span class="success-icon">✓</span><h3>¡Solicitud enviada!</h3><p>Recibimos tu pedido de reserva. Te escribimos por WhatsApp para confirmarla y pasarte los datos de la seña.</p><div class="success-summary" id="success-summary"></div><ol class="next-steps"><li><b>Te confirmamos</b> la disponibilidad por WhatsApp.</li><li><b>Abonás la seña</b> por transferencia y la reserva queda firme.</li><li><b>El resto</b> se paga al ingresar.</li></ol><small>¿Querés adelantarte?</small><a id="whatsapp-link" class="button button-primary" target="_blank" rel="noopener">Escribirle al anfitrión</a>
         </div>
       </div>
     </section>
@@ -183,9 +216,10 @@
     </div>
     <div class="footer-bottom"><p id="footer-location">Alpa Corral · Córdoba · Argentina</p><p>© <span id="footer-year">2026</span> Villa il Fanale</p></div>
   </footer>
+  <div class="mobile-reserve" id="mobile-reserve"><div><b id="mr-price">Desde $60.000</b><span>por noche</span></div><a href="#reservar" class="button button-primary">Ver fechas</a></div>
   <a class="whatsapp-float" data-whatsapp target="_blank" rel="noopener" aria-label="Escribir por WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 0 0-7.6 13.2L3.2 20.8l4.5-1.2A8.8 8.8 0 1 0 12 3.2z"/><path d="M8.7 8.2c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.5l-.5.6c-.1.1-.2.3 0 .5.4.7 1 1.4 1.7 1.9.5.4 1 .6 1.3.8.2.1.3 0 .5-.1l.6-.7c.1-.2.3-.2.5-.1l1.6.8c.2.1.4.2.4.3 0 .4 0 1.1-.4 1.5-.4.5-1.2.9-1.9.8-1.1 0-2.6-.6-4-1.8-1.6-1.4-2.5-3-2.7-4-.2-.9.2-1.6.3-1.7z" class="fill"/></svg><span>Consultar</span></a>
 
   <script src="config.js"></script>
-  <script src="public.js?v=8"></script>
+  <script src="public.js?v=9"></script>
 </body>
 </html>

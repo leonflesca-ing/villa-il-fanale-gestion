@@ -113,6 +113,13 @@ function normalizeState(saved) {
     next.settings.checkout = '11:00';
     next.meta.contentFix1 = true;
   }
+  if (!next.meta.contentFix2) {
+    if (/consult/i.test(next.publicContent.bookingTitle || '')) next.publicContent.bookingTitle = 'Reservá directo.';
+    if (/no bloquea el calendario/i.test(next.publicContent.bookingDescription || '')) next.publicContent.bookingDescription = 'Elegí tus fechas en el calendario y mirá el precio exacto al instante. Te confirmamos por WhatsApp y la reserva queda firme con la seña.';
+    next.publicContent.depositPercent ??= 50;
+    ['Iglesia de Alpa Corral','Brasería El Alto','Museo Regional','Restaurante El Viejo Correo'].forEach((v, i) => { next.publicContent[`near${i+1}`] ??= v; });
+    next.meta.contentFix2 = true;
+  }
   return next;
 }
 function saveState(message, options = {}) {
@@ -123,23 +130,24 @@ function saveState(message, options = {}) {
   Memory.mirror(state);
   Memory.maybeSnapshot(state);
   if (!options.skipCloud) Cloud.schedulePush();
+  Availability.schedule();
   if (!ok) toast('El navegador no deja guardar más aquí. Quedó guardado en la memoria de respaldo; eliminá alguna foto agregada.');
   else if (message) toast(message);
   return true;
 }
 
 const navItems = [
-  ['inicio','⌂','Inicio'], ['consultas','◌','Consultas'], ['calendario','▦','Calendario'],
-  ['conexiones','⌁','Conexiones'], ['tareas','✓','Tareas'], ['finanzas','$','Ingresos'],
-  ['inventario','◇','Inventario'], ['contenido','✦','Contenido'], ['pagina','▤','Editar página'], ['asistente','✺','Asistente']
+  ['inicio','⌂','Inicio'], ['reservas','◉','Reservas'], ['calendario','▦','Calendario'],
+  ['finanzas','$','Ingresos'], ['pagina','✎','Página web'], ['conexiones','⚙','Ajustes']
 ];
-const mobileItems = navItems.filter(item => ['inicio','consultas','calendario','conexiones','tareas','pagina','asistente'].includes(item[0]));
+const navSecondary = [['tareas','✓','Tareas'], ['inventario','◇','Inventario'], ['contenido','✦','Publicaciones'], ['asistente','✺','Asistente']];
+const mobileItems = navItems.filter(item => ['inicio','reservas','calendario','pagina','conexiones'].includes(item[0]));
 const meta = {
-  inicio: ['HOY EN LA VILLA', () => greeting()], consultas: ['OPORTUNIDADES', 'Consultas y reservas'],
+  inicio: ['HOY EN LA VILLA', () => greeting()], consultas: ['RESERVAS Y SOLICITUDES', 'Reservas'], reservas: ['RESERVAS Y SOLICITUDES', 'Reservas'],
   calendario: ['DISPONIBILIDAD', 'Calendario'], tareas: ['PREPARACIÓN', 'Tareas de la casa'],
   finanzas: ['NÚMEROS CLAROS', 'Ingresos'], inventario: ['TODO EN SU LUGAR', 'Inventario'],
   contenido: ['VOZ DE LA VILLA', 'Contenido para redes'], asistente: ['TU COPILOTO', 'Asistente de Villa il Fanale'],
-  conexiones: ['CONFIGURACIÓN', 'Conexiones'], pagina: ['SITIO PÚBLICO', 'Editar página pública']
+  conexiones: ['CONFIGURACIÓN', 'Ajustes'], pagina: ['SITIO PÚBLICO', 'Editar página pública']
 };
 
 function greeting() {
@@ -161,6 +169,8 @@ async function startApplication() {
   fetchHolidays();
   render();
   Cloud.start();
+  Externals.refresh(false);
+  Availability.schedule();
   registerServiceWorker();
   if (state.settings.bookingEndpoint && state.settings.bookingAdminKey) syncPublicRequests(true);
 }
@@ -193,7 +203,7 @@ window.addEventListener('beforeinstallprompt', event => {
 });
 
 function renderNav() {
-  document.querySelector('#desktop-nav').innerHTML = navItems.map(navButton).join('');
+  document.querySelector('#desktop-nav').innerHTML = navItems.map(navButton).join('') + `<details class="nav-more" ${navSecondary.some(i=>i[0]===route)?'open':''}><summary>Más herramientas</summary>${navSecondary.map(navButton).join('')}</details>`;
   document.querySelector('#mobile-nav').innerHTML = mobileItems.map(navButton).join('');
   document.querySelectorAll('[data-route]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.route)));
 }
@@ -201,6 +211,7 @@ function navButton([key, icon, label]) {
   return `<button class="nav-item ${route === key ? 'active' : ''}" data-route="${key}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`;
 }
 function navigate(next) {
+  if (next === 'consultas') next = 'reservas';
   const changed = route !== next;
   route = next;
   document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.route === route));
@@ -212,10 +223,11 @@ function render() {
   document.querySelector('#page-kicker').textContent = kicker;
   document.querySelector('#page-title').textContent = typeof title === 'function' ? title() : title;
   document.querySelector('#quick-add').textContent = '＋ Cargar reserva';
-  const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, pagina: renderPublicEditor, asistente: renderAssistant, conexiones: renderConnections };
+  const pages = { inicio: renderDashboard, consultas: renderReservations, reservas: renderReservations, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, pagina: renderPublicEditor, asistente: renderAssistant, conexiones: renderConnections };
   document.querySelector('#app').innerHTML = pages[route]();
   bindPage();
   if (route === 'conexiones') Memory.renderList();
+  if (route === 'pagina') bindLiveEditor();
   Cloud.renderStatus();
 }
 
@@ -227,6 +239,10 @@ function bindGlobal() {
 function bindPage() {
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => handleAction(button.dataset.action, button.dataset.id)));
   document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { leadFilter = button.dataset.filter; render(); }));
+  document.querySelectorAll('[data-res-tab]').forEach(button => button.addEventListener('click', () => { reservationTab = button.dataset.resTab; render(); }));
+  document.querySelectorAll('[data-route-go]').forEach(button => button.addEventListener('click', () => navigate(button.dataset.routeGo)));
+  const resSearch = document.querySelector('#res-search');
+  if (resSearch) resSearch.addEventListener('input', () => { reservationSearch = resSearch.value; const pos = resSearch.selectionStart; render(); const again = document.querySelector('#res-search'); again.focus(); again.setSelectionRange(pos, pos); });
   document.querySelectorAll('[data-task]').forEach(input => input.addEventListener('change', () => toggleTask(input.dataset.task)));
   document.querySelectorAll('[data-inventory]').forEach(button => button.addEventListener('click', () => cycleInventory(button.dataset.inventory)));
   document.querySelectorAll('[data-photo]').forEach(button => button.addEventListener('click', () => {
@@ -281,6 +297,9 @@ function handleAction(action, id) {
     publishPublicPage: publishPublicPage,
     previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin,
     addPublicGalleryItem: addPublicGalleryItem,
+    acceptLead: () => openAcceptLeadModal(id), dismissLead: () => dismissLead(id),
+    completeExternal: () => completeExternal(id), whatsappGuest: () => whatsappGuest(id),
+    confirmDeposit: () => openDepositModal(id), copyText: () => copyText(id), syncCalendars: () => Externals.refresh(true),
     cloudSetup: () => Cloud.openSetup(), cloudSyncNow: () => Cloud.syncNow(true), cloudForget: () => Cloud.forgetDevice(),
     restoreSnapshot: () => Memory.restore(Number(id))
   };
@@ -288,84 +307,133 @@ function handleAction(action, id) {
 }
 
 function renderDashboard() {
-  const upcoming = activeReservations().filter(r => r.checkout >= todayISO()).sort((a,b) => a.checkin.localeCompare(b.checkin));
-  const next = upcoming[0];
-  const pendingTasks = state.tasks.filter(t => !t.done).length;
+  const today = todayISO();
+  const upcoming = activeReservations().filter(r => r.checkout >= today).sort((a,b) => a.checkin.localeCompare(b.checkin));
+  const next = upcoming.find(r => r.checkin >= today) || upcoming[0];
   const income = incomeByCurrency();
   const due = upcoming.reduce((acc, r) => { const b = Number(r.total) - Number(r.paid || 0); if (b > 0) acc[rCur(r)] += b; return acc; }, { ARS: 0, USD: 0 });
-  const activeLeads = state.leads.filter(l => l.status !== 'convertida').length;
-  const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date()) / 86400000) : null;
+  const requests = state.leads.filter(l => l.status === 'nueva' || l.status === 'presupuesto');
+  const pending = activeReservations().filter(r => r.status === 'pending');
+  const toComplete = Externals.unmatched();
+  const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date(`${today}T12:00:00`)) / 86400000) : null;
+  const staying = upcoming.find(r => r.checkin <= today && r.checkout > today);
+  const occ = occupancy(new Date());
+  const agenda = agendaItems(21);
   return `
-    <section class="hero">
+    <section class="hero hero-v2">
       <div class="hero-copy">
-        <span class="eyebrow" style="color:#ead6ae">LOFT SERRANO · DESDE 1981</span>
-        <h2>${next ? `Próxima llegada:<br>${esc(next.guest)}` : 'La villa está lista<br>para su próxima historia'}</h2>
-        <p>${next ? `${dateLabel(next.checkin)} · ${next.guests} huéspedes · ${next.nights} noche${next.nights===1?'':'s'}${daysToNext !== null ? ` · ${daysToNext <= 0 ? 'llega hoy' : `faltan ${daysToNext} día${daysToNext===1?'':'s'}`}` : ''}.` : 'Todavía no hay una llegada próxima. Registrá una consulta o una reserva para poner el sistema en movimiento.'}</p>
+        <span class="eyebrow" style="color:#ead6ae">${staying ? 'AHORA EN LA VILLA' : next ? (daysToNext <= 0 ? 'LLEGA HOY' : `PRÓXIMA LLEGADA · EN ${daysToNext} DÍA${daysToNext===1?'':'S'}`) : 'LOFT SERRANO · DESDE 1981'}</span>
+        <h2>${staying ? esc(staying.guest) : next ? esc(next.guest) : 'La villa está lista<br>para su próxima historia'}</h2>
+        <p>${(staying || next) ? (r => `${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huésped${Number(r.guests)===1?'':'es'} · ${esc(r.channel||'Directa')}${Number(r.total)-Number(r.paid||0) > 0 ? ` · saldo ${money(Number(r.total)-Number(r.paid||0), rCur(r))}` : ''}`)(staying || next) : 'Todavía no hay una llegada próxima. Cuando entre una reserva la vas a ver acá.'}</p>
         <div class="hero-actions">
-          <button class="secondary-button" data-action="newLead">Registrar consulta manual</button>
-          <button class="ghost-button" style="color:white;border-color:rgba(255,255,255,.4)" data-action="newReservation">Cargar reserva</button>
+          ${(staying || next) ? `<button class="secondary-button" data-action="details" data-id="${(staying||next).id}">Ver reserva</button>${(staying||next).phone ? `<button class="ghost-button on-dark" data-action="whatsappGuest" data-id="${(staying||next).id}">WhatsApp al huésped</button>` : ''}` : `<button class="secondary-button" data-action="newReservation">Cargar reserva</button>`}
         </div>
       </div>
     </section>
-    <section class="stats-grid">
-      ${stat('Consultas activas', activeLeads, 'Señales de demanda')}
-      ${stat('Próximas estadías', upcoming.length, 'Reservas confirmadas')}
-      ${stat('Por cobrar', amountPair(due), 'Saldos de próximas estadías')}
-      ${stat('Ingresos registrados', amountPair(income), 'Histórico cargado')}
-    </section>
     ${Cloud.banner()}
+    ${(requests.length || toComplete.length || pending.length) ? `<section class="alert-strip">
+      ${requests.length ? `<button class="alert-chip warn" data-route-go="reservas"><b>${requests.length}</b> solicitud${requests.length===1?'':'es'} de la web</button>` : ''}
+      ${pending.length ? `<button class="alert-chip gold" data-route-go="reservas"><b>${pending.length}</b> esperando seña</button>` : ''}
+      ${toComplete.length ? `<button class="alert-chip blue" data-route-go="reservas"><b>${toComplete.length}</b> de Booking/Airbnb para completar</button>` : ''}
+    </section>` : ''}
+    <section class="stats-grid">
+      ${stat('Ocupación del mes', `${occ.percent}%`, `${occ.nights} de ${occ.total} noches`)}
+      ${stat('Próximas estadías', upcoming.length, pending.length ? `${pending.length} esperando seña` : 'Todas confirmadas')}
+      ${stat('Por cobrar', amountPair(due), 'Saldos de próximas estadías')}
+      ${stat('Ingresos registrados', amountPair(income), 'Histórico')}
+    </section>
     <section class="content-grid">
       <div class="card">
-        <div class="card-header"><div><span class="eyebrow">PRÓXIMAMENTE</span><h2>Llegadas</h2></div><button class="ghost-button" data-route="calendario" onclick="navigate('calendario')">Ver calendario</button></div>
-        ${upcoming.length ? `<div class="list">${upcoming.slice(0,4).map(reservationRow).join('')}</div>` : empty('⌂','Sin reservas próximas','Cuando recibas una seña, la estadía aparecerá acá.')}
+        <div class="card-header"><div><span class="eyebrow">PRÓXIMAS 3 SEMANAS</span><h2>Agenda</h2></div><button class="ghost-button" data-route-go="calendario">Ver calendario</button></div>
+        ${agenda.length ? `<div class="agenda">${agenda.map(a => `<button class="agenda-item ${a.kind}" ${a.id?`data-action="details" data-id="${a.id}"`:''}><span class="agenda-date"><b>${new Date(`${a.date}T12:00:00`).getDate()}</b><small>${new Intl.DateTimeFormat('es-AR',{month:'short'}).format(new Date(`${a.date}T12:00:00`))}</small></span><span class="agenda-text"><b>${a.title}</b><small>${a.note}</small></span><span class="agenda-tag">${a.tag}</span></button>`).join('')}</div>` : empty('⌂','Agenda libre','No hay llegadas ni salidas en las próximas semanas.')}
       </div>
       <div class="card">
-        <div class="card-header"><div><span class="eyebrow">ATENCIÓN</span><h2>Para resolver</h2></div><button class="ghost-button" data-action="addTask">＋ Tarea</button></div>
-        ${pendingTasks ? `<div class="list">${state.tasks.filter(t=>!t.done).slice(0,5).map(taskMini).join('')}</div>` : empty('✓','Todo tranquilo','No hay pendientes. Si necesitás anotar algo, agregalo con “＋ Tarea”.')}
-        ${daysToNext !== null && daysToNext <= 2 ? `<div class="quote-box"><b>Recordatorio de llegada</b><p style="margin:5px 0 0">${esc(next.guest)} ingresa ${daysToNext <= 0 ? 'hoy' : `en ${daysToNext} día${daysToNext===1?'':'s'}`}.</p></div>` : ''}
+        <div class="card-header"><div><span class="eyebrow">PARA RECORDAR</span><h2>Pendientes</h2></div><button class="ghost-button" data-action="addTask">＋ Tarea</button></div>
+        ${state.tasks.filter(t=>!t.done).length ? `<div class="list">${state.tasks.filter(t=>!t.done).slice(0,6).map(t=>`<label class="task"><input type="checkbox" data-task="${t.id}"><span>${esc(t.title)}${t.due?` <small class="muted">· ${dateLabel(t.due)}</small>`:''}</span></label>`).join('')}</div>` : empty('✓','Todo tranquilo','Anotá lo que necesites recordar con “＋ Tarea”.')}
       </div>
     </section>`;
+}
+function occupancy(date) {
+  const y = date.getFullYear(), m = date.getMonth(); const total = new Date(y, m + 1, 0).getDate(); let nights = 0;
+  for (let d = 1; d <= total; d++) { const iso = localISO(new Date(y, m, d)); if (activeReservations().some(r => iso >= r.checkin && iso < r.checkout) || Externals.unmatched().some(e => iso >= e.start && iso < e.end)) nights++; }
+  return { nights, total, percent: Math.round(nights / total * 100) };
+}
+function agendaItems(days) {
+  const today = todayISO(), limit = localISO(new Date(Date.now() + days * 86400000)); const items = [];
+  activeReservations().forEach(r => {
+    if (r.checkin >= today && r.checkin <= limit) items.push({ date: r.checkin, kind: 'in', title: `Llega ${esc(r.guest)}`, note: `${r.guests} huésped${Number(r.guests)===1?'':'es'} · ${r.nights} noche${r.nights===1?'':'s'}${r.status==='pending'?' · esperando seña':''}`, tag: esc(r.channel || 'Directa'), id: r.id });
+    if (r.checkout >= today && r.checkout <= limit) items.push({ date: r.checkout, kind: 'out', title: `Se va ${esc(r.guest)}`, note: `Salida hasta las ${esc(state.settings.checkout || '11:00')} h`, tag: 'Salida', id: r.id });
+  });
+  Externals.unmatched().forEach(e => { if (e.start >= today && e.start <= limit) items.push({ date: e.start, kind: 'ext', title: `Reserva de ${esc(e.source)}`, note: 'Faltan los datos del huésped', tag: esc(e.source) }); });
+  return items.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'out' ? -1 : 1));
 }
 function stat(label, value, note) { return `<article class="stat-card"><span class="eyebrow">${label}</span><strong>${value}</strong><small>${note}</small></article>`; }
 function empty(icon, title, note) { return `<div class="empty"><span class="empty-icon">${icon}</span><b>${title}</b><p>${note}</p></div>`; }
 function reservationRow(r) {
-  const cancelled = r.status === 'cancelled'; const balance = cancelled ? 0 : Number(r.total) - Number(r.paid || 0);
-  return `<div class="list-item ${cancelled?'cancelled-row':''}"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes${r.channel?` · ${esc(r.channel)}`:''}</p></div><div class="row-actions"><span class="pill ${cancelled?'rust':''}"><span class="dot"></span>${cancelled?'Cancelada':'Confirmada'}</span><button data-action="details" data-id="${r.id}">${cancelled?'Ver historial':balance > 0 ? `Saldo ${money(balance, rCur(r))}` : 'Ver'}</button></div></div>`;
+  const cancelled = r.status === 'cancelled', pending = r.status === 'pending'; const balance = cancelled ? 0 : Number(r.total) - Number(r.paid || 0);
+  return `<div class="list-item res-row ${cancelled?'cancelled-row':''}"><span class="channel-dot ${channelClass(r.channel)}" title="${esc(r.channel||'Directa')}"></span><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.nights} noche${r.nights===1?'':'s'} · ${r.guests} huésped${Number(r.guests)===1?'':'es'}${r.channel?` · ${esc(r.channel)}`:''}</p></div><div class="row-actions"><span class="pill ${cancelled?'rust':pending?'warn':''}"><span class="dot"></span>${cancelled?'Cancelada':pending?'Esperando seña':'Confirmada'}</span><button data-action="details" data-id="${r.id}">${cancelled?'Ver historial':balance > 0 ? `Saldo ${money(balance, rCur(r))}` : 'Ver'}</button></div></div>`;
 }
 function taskMini(t) { return `<div class="list-item"><div class="list-item-main"><b>${esc(t.title)}</b><p>${esc(t.category)} · ${t.due ? dateLabel(t.due) : 'Sin fecha'}</p></div></div>`; }
 
-function renderLeads() {
-  const filters = [['todas','Todas'],['nueva','Nuevas'],['presupuesto','Presupuesto enviado'],['convertida','Convertidas']];
-  const rows = state.leads.filter(l => leadFilter === 'todas' || l.status === leadFilter);
+let reservationTab = 'proximas', reservationSearch = '';
+function channelClass(channel) { return ({ 'Booking.com': 'ch-booking', Airbnb: 'ch-airbnb', 'Página web': 'ch-web' })[channel] || 'ch-direct'; }
+function renderReservations() {
+  const today = todayISO(); const q = reservationSearch.trim().toLowerCase();
+  const requests = state.leads.filter(l => l.status === 'nueva' || l.status === 'presupuesto').sort((a,b) => (a.checkin||'').localeCompare(b.checkin||''));
+  const toComplete = Externals.unmatched();
+  const groups = {
+    proximas: activeReservations().filter(r => r.checkout >= today && r.status !== 'pending').sort((a,b) => a.checkin.localeCompare(b.checkin)),
+    pendientes: activeReservations().filter(r => r.status === 'pending').sort((a,b) => a.checkin.localeCompare(b.checkin)),
+    pasadas: activeReservations().filter(r => r.checkout < today).sort((a,b) => b.checkin.localeCompare(a.checkin)),
+    canceladas: cancelledReservations().sort((a,b) => b.checkin.localeCompare(a.checkin))
+  };
+  const tabs = [['proximas','Próximas'],['pendientes','Esperando seña'],['pasadas','Pasadas'],['canceladas','Canceladas']];
+  const rows = groups[reservationTab].filter(r => !q || [r.guest, r.phone, r.channel, r.bookingRef, r.notes].join(' ').toLowerCase().includes(q));
   const automatic = state.settings.bookingEndpoint && state.settings.bookingAdminKey;
-  return `<section class="booking-intake ${automatic?'connected':''}"><div><span class="booking-intake-icon">${automatic?'✓':'⌂'}</span><div><b>${automatic?'Página de reservas conectada':'Tu página pública está lista'}</b><p>${automatic?'Las solicitudes de la web pueden entrar automáticamente a esta bandeja.':'Los huéspedes pueden consultar fechas y enviarte su solicitud por WhatsApp.'}</p></div></div><div class="row-actions"><button data-action="openPublicSite">Ver página pública</button>${automatic?'<button class="primary-button" data-action="syncPublicRequests">Buscar solicitudes</button>':''}</div></section>
+  return `
+  ${requests.length ? `<section class="card inbox"><div class="card-header"><div><span class="eyebrow">DESDE TU PÁGINA WEB</span><h2>Solicitudes nuevas</h2><p class="muted">Aceptá para bloquear las fechas y mandarle al huésped los datos de la seña.</p></div>${automatic?'<button class="ghost-button" data-action="syncPublicRequests">Buscar nuevas</button>':''}</div>
+    <div class="request-grid">${requests.map(requestCard).join('')}</div></section>` : ''}
+  ${toComplete.length ? `<section class="card inbox ext"><div class="card-header"><div><span class="eyebrow">LLEGARON DE BOOKING / AIRBNB</span><h2>Completar datos</h2><p class="muted">Las fechas ya están bloqueadas. Completá el nombre y el importe con la ficha de la plataforma.</p></div></div>
+    <div class="list">${toComplete.map(e => `<div class="list-item res-row"><span class="channel-dot ${channelClass(e.source)}"></span><div class="list-item-main"><b>Reserva de ${esc(e.source)}</b><p>${dateLabel(e.start)} → ${dateLabel(e.end)} · ${nightCount(e.start,e.end)} noche${nightCount(e.start,e.end)===1?'':'s'}</p></div><div class="row-actions"><button class="primary-button" data-action="completeExternal" data-id="${esc(e.uid)}">Completar</button></div></div>`).join('')}</div></section>` : ''}
   <section class="card">
-    <div class="card-header"><div><span class="eyebrow">DE LA WEB, WHATSAPP, FACEBOOK, INSTAGRAM Y AIRBNB</span><h2>Consultas</h2><p class="muted">La carga manual sigue disponible para cualquier conversación que quieras registrar.</p></div><button class="primary-button" data-action="newLead">＋ Registrar consulta manual</button></div>
-    <div class="filters">${filters.map(([k,l]) => `<button class="filter ${leadFilter===k?'active':''}" data-filter="${k}">${l}</button>`).join('')}</div>
-    ${rows.length ? `<div class="list">${rows.map(leadRow).join('')}</div>` : empty('◌','No hay consultas en esta vista','Cargá la próxima persona que pregunte por fechas.')}
-  </section>`;
+    <div class="card-header"><div><span class="eyebrow">TODAS TUS ESTADÍAS</span><h2>Reservas</h2></div><div class="row-actions"><button class="ghost-button" data-action="newLead">＋ Consulta</button><button class="primary-button" data-action="newReservation">＋ Reserva</button></div></div>
+    <div class="res-toolbar"><div class="filters">${tabs.map(([k,l]) => `<button class="filter ${reservationTab===k?'active':''}" data-res-tab="${k}">${l}${groups[k].length?` <span class="count">${groups[k].length}</span>`:''}</button>`).join('')}</div><input type="search" id="res-search" placeholder="Buscar por nombre, teléfono o N° de reserva" value="${esc(reservationSearch)}"></div>
+    ${rows.length ? `<div class="list">${rows.map(reservationRow).join('')}</div>` : empty('◉', q ? 'Sin resultados' : 'Nada por acá', q ? 'Probá con otra búsqueda.' : 'Cuando haya reservas en esta categoría van a aparecer acá.')}
+  </section>
+  ${state.leads.filter(l => l.status === 'convertida' || l.status === 'descartada').length ? `<details class="history card"><summary>Solicitudes respondidas (${state.leads.filter(l => l.status === 'convertida' || l.status === 'descartada').length})</summary><div class="list">${state.leads.filter(l => l.status === 'convertida' || l.status === 'descartada').slice(-20).reverse().map(l => `<div class="list-item"><div class="list-item-main"><b>${esc(l.name)}</b><p>${dateLabel(l.checkin)} → ${dateLabel(l.checkout)} · ${esc(l.channel||'')}</p></div><div class="row-actions"><span class="pill gray">${statusLabel(l.status)}</span><button class="danger" data-action="deleteLead" data-id="${l.id}">×</button></div></div>`).join('')}</div></details>` : ''}`;
 }
-function leadRow(l) {
+function requestCard(l) {
   const available = checkAvailability(l.checkin, l.checkout);
-  return `<div class="list-item"><div class="list-item-main"><b>${esc(l.name)}</b> <span class="pill gray">${esc(l.channel)}</span><p>${dateLabel(l.checkin)} → ${dateLabel(l.checkout)} · ${l.guests} personas · ${available ? 'Disponible' : 'Cruza una fecha ocupada'}</p></div><div class="row-actions"><span class="pill ${l.status==='nueva'?'warn':''}">${statusLabel(l.status)}</span><button data-action="whatsapp" data-id="${l.id}">Responder</button>${l.status!=='convertida'?`<button data-action="convert" data-id="${l.id}">Confirmar seña</button>`:''}<button class="danger" data-action="deleteLead" data-id="${l.id}">×</button></div></div>`;
+  const total = Number(l.estimatedTotal || 0) || suggestPrice(l.checkin, l.checkout, l.nightly).total;
+  return `<article class="request-card ${available?'':'conflict'}">
+    <div class="rc-head"><b>${esc(l.name)}</b><span class="pill ${l.status==='nueva'?'warn':'gray'}">${statusLabel(l.status)}</span></div>
+    <p class="rc-dates">${dateLabel(l.checkin)} → ${dateLabel(l.checkout)}</p>
+    <p class="muted">${nightCount(l.checkin,l.checkout)} noche${nightCount(l.checkin,l.checkout)===1?'':'s'} · ${l.guests} persona${Number(l.guests)===1?'':'s'} · ${esc(l.channel||'Web')}</p>
+    <p class="rc-total">${money(total)}</p>
+    ${available ? '' : '<p class="rc-warn">Estas fechas se cruzan con otra reserva</p>'}
+    ${l.notes ? `<p class="rc-notes">${esc(l.notes)}</p>` : ''}
+    <div class="row-actions">${available?`<button class="primary-button" data-action="acceptLead" data-id="${l.id}">Aceptar</button>`:''}<button data-action="whatsapp" data-id="${l.id}">WhatsApp</button><button class="ghost-button" data-action="dismissLead" data-id="${l.id}">Descartar</button></div>
+  </article>`;
 }
-function statusLabel(status) { return ({ nueva:'Nueva', presupuesto:'Presupuesto enviado', convertida:'Reserva confirmada' })[status] || status; }
+function statusLabel(status) { return ({ nueva:'Nueva', presupuesto:'Respondida', convertida:'Aceptada', descartada:'Descartada' })[status] || status; }
 
 function renderCalendar() {
   const year = calendarCursor.getFullYear(), month = calendarCursor.getMonth();
-  const label = new Intl.DateTimeFormat('es-AR', { month:'long', year:'numeric' }).format(calendarCursor);
+  const label = (t => t.charAt(0).toUpperCase() + t.slice(1))(new Intl.DateTimeFormat('es-AR', { month:'long', year:'numeric' }).format(calendarCursor));
   const first = new Date(year, month, 1); const start = new Date(year, month, 1 - ((first.getDay()+6)%7));
   const days = Array.from({length:42}, (_,i) => { const d = new Date(start); d.setDate(start.getDate()+i); return d; });
   return `<section class="card">
-    <div class="card-header"><div><span class="eyebrow">RESERVAS, BLOQUEOS Y FERIADOS</span><h2>Disponibilidad</h2></div><div class="row-actions"><button data-action="newBlock">Bloquear fechas</button><button data-action="newReservation">Cargar reserva</button><button data-action="importCalendar">Importar .ics</button></div></div>
+    <div class="card-header"><div><span class="eyebrow">RESERVAS, BLOQUEOS Y FERIADOS</span><h2>Disponibilidad</h2></div><div class="row-actions"><button data-action="newBlock">Bloquear fechas</button><button class="primary-button" data-action="newReservation">＋ Reserva</button></div></div>
+    <div class="cal-legend-admin"><span><i class="ch-direct"></i>Directa / WhatsApp</span><span><i class="ch-booking"></i>Booking.com</span><span><i class="ch-airbnb"></i>Airbnb</span><span><i class="pending-sw"></i>Esperando seña</span><span><i class="blocked-sw"></i>Bloqueo / feriado</span></div>
     <div class="calendar-toolbar"><button class="icon-button" data-action="prevMonth">‹</button><h2>${label}</h2><button class="icon-button" data-action="nextMonth">›</button></div>
     <div class="calendar-grid">${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(x=>`<div class="weekday">${x}</div>`).join('')}${days.map(d=>calendarDay(d,month)).join('')}</div>
   </section>
-  <section class="content-grid"><div class="card"><h2>Reservas confirmadas</h2>${activeReservations().length?`<div class="list">${activeReservations().sort((a,b)=>a.checkin.localeCompare(b.checkin)).map(reservationRow).join('')}</div>`:empty('▦','Calendario despejado','No hay reservas activas.')}${cancelledReservations().length?`<details class="history"><summary>${cancelledReservations().length} reserva${cancelledReservations().length===1?'':'s'} cancelada${cancelledReservations().length===1?'':'s'}</summary><div class="list">${cancelledReservations().map(reservationRow).join('')}</div></details>`:''}</div><div class="card"><h2>Calendarios conectados</h2><p class="muted">Airbnb puede sincronizar disponibilidad en ambos sentidos mediante dos enlaces iCal. La aplicación necesita un servidor de calendario para ofrecer su propio enlace; la importación actual todavía es una copia manual.</p><button class="secondary-button" data-route="conexiones" onclick="navigate('conexiones')">Ver conexiones</button></div></section>`;
+  <section class="content-grid"><div class="card"><div class="card-header"><div><span class="eyebrow">ESTE Y LOS PRÓXIMOS MESES</span><h2>Próximas estadías</h2></div><button class="ghost-button" data-route-go="reservas">Ver todas</button></div>${activeReservations().filter(r=>r.checkout>=todayISO()).length?`<div class="list">${activeReservations().filter(r=>r.checkout>=todayISO()).sort((a,b)=>a.checkin.localeCompare(b.checkin)).map(reservationRow).join('')}</div>`:empty('▦','Calendario despejado','No hay reservas próximas.')}</div><div class="card"><span class="eyebrow">BOOKING.COM Y AIRBNB</span><h2>Sincronización</h2><p class="muted">${Object.keys(Externals.sources).length ? `Conectado: ${Object.entries(Externals.sources).map(([k,v])=>`${k} ${v==='ok'?'✓':'(error)'}`).join(' · ')}. Las fechas de las plataformas aparecen en el calendario con borde punteado hasta que completes los datos.` : 'Todavía no conectaste Booking ni Airbnb. Se hace una sola vez desde Ajustes y después se actualiza solo cada 30 minutos.'}</p><div class="row-actions" style="justify-content:flex-start"><button data-action="syncCalendars">Actualizar ahora</button><button class="ghost-button" data-route-go="conexiones">Ajustes</button></div></div></section>`;
 }
 function calendarDay(d, shownMonth) {
-  const iso = localISO(d); const events = [];
-  activeReservations().forEach(r => { if (iso >= r.checkin && iso < r.checkout) events.push(`<div class="calendar-event">${esc(r.guest)}</div>`); });
+  const iso = localISO(d); const events = []; const weekStart = (d.getDay() + 6) % 7 === 0;
+  activeReservations().forEach(r => { if (iso >= r.checkin && iso < r.checkout) { const first = iso === r.checkin, last = plusDay(iso) === r.checkout; events.push(`<button class="calendar-event bar ${channelClass(r.channel)} ${r.status==='pending'?'pending':''} ${first?'bar-start':''} ${last?'bar-end':''}" data-action="details" data-id="${r.id}" title="${esc(r.guest)} · ${esc(r.channel||'Directa')}">${first || weekStart ? esc(r.guest) : '&nbsp;'}</button>`); } });
+  Externals.unmatched().forEach(e => { if (iso >= e.start && iso < e.end) { const first = iso === e.start, last = plusDay(iso) === e.end; events.push(`<button class="calendar-event bar ext ${channelClass(e.source)} ${first?'bar-start':''} ${last?'bar-end':''}" data-action="completeExternal" data-id="${esc(e.uid)}" title="${esc(e.source)} · completar datos">${first || weekStart ? `${esc(e.source)} · completar` : '&nbsp;'}</button>`); } });
   state.blocks.forEach(b => { if (iso >= b.start && iso <= b.end) events.push(`<div class="calendar-event blocked">Bloqueado</div>`); });
   const holiday = state.holidays.find(h => h.fecha === iso || h.date === iso); if (holiday) events.push(`<div class="calendar-event blocked">${esc(holiday.nombre || holiday.localName)}</div>`);
   return `<div class="day ${d.getMonth()!==shownMonth?'outside':''} ${iso===todayISO()?'today':''}"><span class="day-number">${d.getDate()}</span>${events.slice(0,3).join('')}</div>`;
@@ -432,17 +500,16 @@ function renderContent() {
 function renderPublicEditor() {
   const content = state.publicContent || defaultState.publicContent;
   const galleryItems = publicGalleryItems(content);
-  return `<section class="editor-intro card"><div><span class="eyebrow">EDITOR DEL SITIO</span><h2>Tu página, sin tocar código</h2><p class="muted">Modificá el contenido, guardá un borrador y publicalo cuando estés conforme. Los visitantes sólo ven la última versión publicada.</p></div><div class="editor-status"><span class="dot"></span><div><b>Acceso verificado</b><small>Cuenta ${GITHUB_OWNER}</small></div></div></section>
-  <form id="public-editor-form" class="page-editor">
-    <div class="card editor-sidebar"><span class="eyebrow">EDITOR COMPLETO</span><h3>Todos los contenidos</h3><p class="muted">Podés cambiar los textos, precios y las fotografías del sitio. Guardá primero un borrador y publicá sólo cuando estés conforme.</p><a href="#editor-portada">Portada</a><a href="#editor-historia">Historia</a><a href="#editor-galeria">Galería</a><a href="#editor-servicios">Servicios</a><a href="#editor-normas">Normas</a><a href="#editor-ubicacion">Ubicación</a><a href="#editor-reservas">Reservas</a><button type="button" class="ghost-button" data-action="previewPublicPage">Ver página publicada</button><button type="button" class="danger-link" data-action="logoutAdmin">Cerrar sesión privada</button></div>
+  return `<form id="public-editor-form" class="page-editor v2">
     <div class="editor-fields">
-      <section class="card" id="editor-portada"><div class="card-header"><div><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></div></div><div class="form-grid">
+      <div class="editor-topbar card"><div><span class="eyebrow">EDITOR DEL SITIO</span><h2>Tu página, en vivo</h2><p class="muted">Cada cambio se ve al instante en la vista previa y se guarda solo. Cuando esté listo, tocá <b>Publicar</b>.</p></div><span class="draft-state ${state.meta?.publicDirty?'dirty':''}" id="draft-state">${state.meta?.publicDirty?'Cambios sin publicar':'Todo publicado'}</span></div>
+      <details class="card editor-sec" id="editor-portada" open><summary><span class="eyebrow">PORTADA</span><h2>Primera impresión</h2></summary><div class="form-grid">
         ${field('Texto superior','heroEyebrow','text','ALPA CORRAL · CÓRDOBA',true,undefined,undefined,content.heroEyebrow)}
         ${field('Título principal','heroTitle','text','Una casa con alma',true,undefined,undefined,content.heroTitle)}
         ${field('Título destacado','heroSubtitle','text','de sierra.',true,undefined,undefined,content.heroSubtitle)}
         ${editorTextArea('Descripción breve','heroDescription',content.heroDescription,3)}
-      </div>${editorImage('heroImage','Imagen de portada',content.heroImage)}</section>
-      <section class="card" id="editor-historia"><div class="card-header"><div><span class="eyebrow">HISTORIA</span><h2>Presentación de la villa</h2></div></div><div class="form-grid">
+      </div>${editorImage('heroImage','Imagen de portada',content.heroImage)}</details>
+      <details class="card editor-sec" id="editor-historia" ><summary><span class="eyebrow">HISTORIA</span><h2>Presentación de la villa</h2></summary><div class="form-grid">
         ${field('Texto superior','introEyebrow','text','EL ENCANTO DE LO SIMPLE',true,undefined,undefined,content.introEyebrow)}
         ${field('Título','introTitle','text','Un refugio serrano',true,undefined,undefined,content.introTitle)}
         ${field('Continuación','introSubtitle','text','para volver al ritmo propio.',true,undefined,undefined,content.introSubtitle)}
@@ -450,38 +517,44 @@ function renderPublicEditor() {
         ${editorTextArea('Segundo párrafo','introCopyTwo',content.introCopyTwo,3)}
         ${field('Leyenda pequeña de la foto','featureCaptionSmall','text','El corazón de la casa',true,undefined,undefined,content.featureCaptionSmall)}
         ${field('Leyenda principal de la foto','featureCaption','text','Un único espacio…',true,undefined,undefined,content.featureCaption)}
-      </div>${editorImage('featureImage','Imagen interior de ancho completo',content.featureImage)}</section>
-      <section class="card" id="editor-galeria"><div class="card-header"><div><span class="eyebrow">ESPACIOS Y GALERÍA</span><h2>Recorrido fotográfico</h2></div><button type="button" class="secondary-button" data-action="addPublicGalleryItem">＋ Agregar foto</button></div><div class="form-grid">
+      </div>${editorImage('featureImage','Imagen interior de ancho completo',content.featureImage)}</details>
+      <details class="card editor-sec" id="editor-galeria" ><summary><span class="eyebrow">ESPACIOS Y GALERÍA</span><h2>Recorrido fotográfico</h2></summary><button type="button" class="secondary-button" data-action="addPublicGalleryItem">＋ Agregar foto</button><div class="form-grid">
         ${field('Texto superior','spacesEyebrow','text','RECORRÉ VILLA IL FANALE',true,undefined,undefined,content.spacesEyebrow)}
         ${field('Título','spacesTitle','text','Rincones que invitan',true,undefined,undefined,content.spacesTitle)}
         ${field('Continuación','spacesSubtitle','text','a quedarse.',true,undefined,undefined,content.spacesSubtitle)}
         ${editorTextArea('Descripción','spacesDescription',content.spacesDescription,3)}
-      </div><div class="editor-gallery dynamic-gallery">${galleryItems.map((item,index)=>editorGalleryItem(item,index)).join('')}</div><p class="muted gallery-help">Podés agregar, eliminar, cambiar fotografía y editar el nombre visible de cada imagen. Se publican cuando tocás “Publicar cambios”.</p></section>
-      <section class="card" id="editor-servicios"><div class="card-header"><div><span class="eyebrow">SERVICIOS</span><h2>Equipamiento y comodidades</h2></div></div><div class="form-grid">
+      </div><div class="editor-gallery dynamic-gallery">${galleryItems.map((item,index)=>editorGalleryItem(item,index)).join('')}</div><p class="muted gallery-help">Podés agregar, eliminar, cambiar fotografía y editar el nombre visible de cada imagen. Se publican cuando tocás “Publicar cambios”.</p></details>
+      <details class="card editor-sec" id="editor-servicios" ><summary><span class="eyebrow">SERVICIOS</span><h2>Equipamiento y comodidades</h2></summary><div class="form-grid">
         ${field('Texto superior','detailsEyebrow','text','TODO LO NECESARIO',true,undefined,undefined,content.detailsEyebrow)}${field('Título','detailsTitle','text','Preparada para',true,undefined,undefined,content.detailsTitle)}${field('Continuación','detailsSubtitle','text','disfrutarla.',true,undefined,undefined,content.detailsSubtitle)}
         ${[1,2,3,4,5,6].map(i=>`${field(`Servicio ${i}` ,`amenity${i}Title`,'text','',true,undefined,undefined,content[`amenity${i}Title`])}${field(`Descripción ${i}`,`amenity${i}Description`,'text','',true,undefined,undefined,content[`amenity${i}Description`])}`).join('')}
-      </div>${editorImage('detailsImage','Imagen lateral de servicios',content.detailsImage)}</section>
-      <section class="card" id="editor-normas"><div class="card-header"><div><span class="eyebrow">NORMAS Y HORARIOS</span><h2>Información antes de venir</h2></div></div><div class="form-grid">
+      </div>${editorImage('detailsImage','Imagen lateral de servicios',content.detailsImage)}</details>
+      <details class="card editor-sec" id="editor-normas" ><summary><span class="eyebrow">NORMAS Y HORARIOS</span><h2>Información antes de venir</h2></summary><div class="form-grid">
         ${field('Texto superior','rulesEyebrow','text','ANTES DE VENIR',true,undefined,undefined,content.rulesEyebrow)}${field('Título','rulesTitle','text','Información clara,',true,undefined,undefined,content.rulesTitle)}${field('Continuación','rulesSubtitle','text','estadías tranquilas.',true,undefined,undefined,content.rulesSubtitle)}
         ${[1,2,3,4].map(i=>`${field(`Dato ${i}`,`rule${i}Value`,'text','',true,undefined,undefined,content[`rule${i}Value`])}${field(`Título ${i}`,`rule${i}Title`,'text','',true,undefined,undefined,content[`rule${i}Title`])}${editorTextArea(`Explicación ${i}`,`rule${i}Description`,content[`rule${i}Description`],2)}`).join('')}
         ${editorTextArea('Aviso importante','importantText',content.importantText,3)}
-      </div></section>
-      <section class="card" id="editor-ubicacion"><div class="card-header"><div><span class="eyebrow">MAPA Y UBICACIÓN</span><h2>Cómo llegar</h2></div></div><div class="form-grid">
+      </div></details>
+      <details class="card editor-sec" id="editor-ubicacion" ><summary><span class="eyebrow">MAPA Y UBICACIÓN</span><h2>Cómo llegar</h2></summary><div class="form-grid">
         ${field('Texto superior','locationEyebrow','text','UBICACIÓN',true,undefined,undefined,content.locationEyebrow)}
         ${field('Título','locationTitle','text','Zona semicéntrica',true,undefined,undefined,content.locationTitle)}
         ${field('Continuación','locationSubtitle','text','de Alpa Corral.',true,undefined,undefined,content.locationSubtitle)}
         ${editorTextArea('Descripción','locationDescription',content.locationDescription,4)}
         ${field('Búsqueda para el mapa','locationMapQuery','text','Calle Los Ligustros, Alpa Corral, Córdoba',true,undefined,undefined,content.locationMapQuery)}
         ${field('Botón Google Maps','locationMapLink','url','https://maps.app.goo.gl/…',true,undefined,undefined,content.locationMapLink)}
-      </div></section>
-      <section class="card" id="editor-reservas"><div class="card-header"><div><span class="eyebrow">CONSULTAS Y RESERVAS</span><h2>Formulario público</h2></div></div><div class="form-grid">
+        ${[1,2,3,4].map(i=>field(`Lugar cercano ${i}`,`near${i}`,'text','',false,undefined,undefined,content[`near${i}`] ?? ['Iglesia de Alpa Corral','Brasería El Alto','Museo Regional','Restaurante El Viejo Correo'][i-1])).join('')}
+      </div></details>
+      <details class="card editor-sec" id="editor-reservas" ><summary><span class="eyebrow">CONSULTAS Y RESERVAS</span><h2>Formulario público</h2></summary><div class="form-grid">
         ${field('Texto superior','bookingEyebrow','text','TU PRÓXIMA ESCAPADA',true,undefined,undefined,content.bookingEyebrow)}${field('Título','bookingTitle','text','Consultá tus fechas.',true,undefined,undefined,content.bookingTitle)}${editorTextArea('Explicación','bookingDescription',content.bookingDescription,4)}${field('Ubicación del pie','footerLocation','text','Alpa Corral · Córdoba · Argentina',true,undefined,undefined,content.footerLocation)}
         ${field('Una sola noche','singleNight','number','100000',true,1,undefined,content.singleNight)}
         ${field('Dos noches o más','regularNight','number','60000',true,1,undefined,content.regularNight)}
-        ${field('Temporada alta','highNight','number','65000',true,1,undefined,content.highNight)}
-      </div>${editorImage('bookingImage','Imagen junto al formulario',content.bookingImage)}</section>
-      <div class="editor-publish"><div><b>¿Todo listo?</b><span>Primero guardá el borrador. Publicar actualizará la página que ven los huéspedes.</span></div><div class="row-actions"><button type="submit" class="ghost-button">Guardar borrador</button><button type="button" class="primary-button" data-action="publishPublicPage">Publicar cambios</button></div></div>
+        ${field('Temporada alta (nov. a feb.)','highNight','number','65000',true,1,undefined,content.highNight)}
+        ${field('Seña para confirmar (%)','depositPercent','number','50',true,1,100,content.depositPercent ?? 50)}
+      </div>${editorImage('bookingImage','Imagen junto al formulario',content.bookingImage)}</details>
+      <div class="editor-publish"><div><b>¿Todo listo?</b><span>Tus cambios ya están guardados. Publicar actualiza la página que ven los huéspedes.</span></div><div class="row-actions"><button type="button" class="ghost-button" data-action="previewPublicPage">Abrir página</button><button type="button" class="primary-button" data-action="publishPublicPage">Publicar cambios</button></div></div>
     </div>
+    <aside class="editor-preview">
+      <div class="preview-bar"><div class="seg"><button type="button" class="active" data-preview-size="desktop">Compu</button><button type="button" data-preview-size="mobile">Celular</button></div><span class="muted">Vista previa en vivo</span></div>
+      <div class="preview-frame desktop" id="preview-frame"><iframe id="preview-iframe" title="Vista previa de la página" src="reservar/?preview=1"></iframe></div>
+    </aside>
   </form>`;
 }
 
@@ -499,9 +572,10 @@ function editorGalleryItem(item,index) {
   </article>`;
 }
 
-function capturePublicEditor() {
+function capturePublicEditor(silent = false) {
   const form = document.querySelector('#public-editor-form');
-  if (!form || !form.reportValidity()) return false;
+  if (!form) return false;
+  if (!silent && !form.reportValidity()) { form.querySelectorAll('details.editor-sec').forEach(d => { if (d.querySelector(':invalid')) d.open = true; }); form.reportValidity(); return false; }
   const values = Object.fromEntries(new FormData(form));
   const currentGallery = publicGalleryItems();
   const galleryItems = currentGallery.map(item => ({
@@ -512,7 +586,7 @@ function capturePublicEditor() {
   Object.keys(values).forEach(key => {
     if (key.startsWith('galleryItemCaption:')) delete values[key];
   });
-  ['singleNight','regularNight','highNight'].forEach(key => values[key] = Number(values[key]));
+  ['singleNight','regularNight','highNight','depositPercent'].forEach(key => values[key] = Number(values[key]));
   state.publicContent = { ...(state.publicContent || defaultState.publicContent), ...values, galleryItems };
   return true;
 }
@@ -520,7 +594,43 @@ function capturePublicEditor() {
 function savePublicDraft(event) {
   event.preventDefault();
   if (!capturePublicEditor()) return;
-  saveState('Borrador guardado en esta computadora');
+  saveState('Borrador guardado');
+}
+let previewTimer = null, draftTimer = null, previewUrls = {};
+function sendPreview() {
+  const frame = document.querySelector('#preview-iframe'); if (!frame?.contentWindow) return;
+  Object.entries(pendingPublicImages).forEach(([key, file]) => { if (!previewUrls[key] || previewUrls[key].file !== file) previewUrls[key] = { file, url: URL.createObjectURL(file) }; });
+  const images = Object.fromEntries(Object.entries(previewUrls).filter(([key]) => pendingPublicImages[key]).map(([key, v]) => [key, v.url]));
+  frame.contentWindow.postMessage({ type: 'villa-preview', content: state.publicContent, images }, location.origin);
+}
+function bindLiveEditor() {
+  const form = document.querySelector('#public-editor-form'); if (!form) return;
+  const frame = document.querySelector('#preview-iframe');
+  frame?.addEventListener('load', () => setTimeout(sendPreview, 300));
+  const markDirty = () => { state.meta.publicDirty = true; const el = document.querySelector('#draft-state'); if (el) { el.textContent = 'Guardando…'; el.className = 'draft-state dirty'; } };
+  form.addEventListener('input', () => {
+    markDirty();
+    clearTimeout(previewTimer); previewTimer = setTimeout(() => { capturePublicEditor(true); sendPreview(); }, 280);
+    clearTimeout(draftTimer); draftTimer = setTimeout(() => { capturePublicEditor(true); saveState(''); const el = document.querySelector('#draft-state'); if (el) el.textContent = 'Cambios sin publicar · guardado'; }, 1200);
+  });
+  const box = document.querySelector('#preview-frame');
+  const fit = () => {
+    if (!box || !frame) return;
+    if (box.classList.contains('desktop')) { const k = box.clientWidth / 1440; frame.style.width = '1440px'; frame.style.height = `${box.clientHeight / k}px`; frame.style.transform = `scale(${k})`; }
+    else { frame.style.width = ''; frame.style.height = ''; frame.style.transform = ''; }
+  };
+  if ('ResizeObserver' in window && box) new ResizeObserver(fit).observe(box);
+  fit();
+  document.querySelectorAll('[data-preview-size]').forEach(button => button.addEventListener('click', () => {
+    document.querySelectorAll('[data-preview-size]').forEach(b => b.classList.toggle('active', b === button));
+    box.className = `preview-frame ${button.dataset.previewSize}`; setTimeout(fit, 380); fit();
+  }));
+  form.querySelectorAll('details.editor-sec').forEach(d => d.addEventListener('toggle', () => {
+    if (!d.open) return;
+    const map = { portada: 'inicio', historia: 'historia', galeria: 'espacios', servicios: 'detalles', normas: 'reglas', ubicacion: 'ubicacion', reservas: 'reservar' };
+    const target = map[d.id.replace('editor-', '')];
+    try { const doc = frame.contentDocument; const el = target === 'reglas' ? doc.querySelector('.rules') : doc.getElementById(target); el?.scrollIntoView({ behavior: 'smooth' }); } catch {}
+  }));
 }
 
 async function handlePublicImageSelected(input) {
@@ -536,6 +646,7 @@ async function handlePublicImageSelected(input) {
     if (preview) preview.src = URL.createObjectURL(preparedFile);
     if (name) name.textContent = `${preparedFile.name} · ${formatFileSize(preparedFile.size)} · lista para publicar`;
     if (preparedFile.size < file.size) toast(`Imagen optimizada: ${formatFileSize(file.size)} → ${formatFileSize(preparedFile.size)}`);
+    state.meta.publicDirty = true; sendPreview();
   } catch (error) {
     input.value = '';
     const name = document.querySelector(`#file-${key}`);
@@ -592,7 +703,8 @@ async function publishPublicPage() {
     state.settings.regularNight = state.publicContent.regularNight;
     state.settings.highNight = state.publicContent.highNight;
     saveState();
-    published = true;
+    published = true; state.meta.publicDirty = false; saveState('', { keepTimestamp: false });
+    const ds = document.querySelector('#draft-state'); if (ds) { ds.textContent = 'Todo publicado'; ds.className = 'draft-state'; }
     toast('Cambios publicados. Si cambiaste fotos, esperá un minuto y recargá la página pública para verlas definitivas.');
     if (button) {
       button.textContent = 'Publicado ✓';
@@ -702,24 +814,39 @@ function renderAssistant() {
 function renderConnections() {
   const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
   const imported = state.reservations.filter(r => r.external).length;
-  return `<section class="connection-hero card">
-    <div><span class="eyebrow">CENTRO DE CONEXIONES</span><h2>Todo entra por acá</h2><p class="muted">La aplicación sigue siendo gratuita. Ninguna conexión compra servicios ni envía información sin que vos lo apruebes.</p></div>
-    <div class="connection-badge ${isSecure ? 'ready' : ''}"><span>${isSecure ? '✓' : '○'}</span><b>${isSecure ? 'Lista para instalar' : 'Modo local'}</b><small>${isSecure ? 'Abierta desde una dirección segura' : 'Para instalarla como app debe publicarse en HTTPS'}</small></div>
+  const site = (state.settings.publicSiteUrl || 'https://leonflesca-ing.github.io/villa-il-fanale-gestion/reservar/').replace(/\/?$/, '/');
+  const src = Externals.sources; const evs = Externals.events;
+  const srcState = name => src[name] === 'ok' ? `<span class="pill"><span class="dot"></span>Conectado</span>` : src[name] === 'error' ? `<span class="pill rust"><span class="dot"></span>Error al leer</span>` : `<span class="pill warn"><span class="dot"></span>Sin conectar</span>`;
+  return `<section class="card calendars-card">
+    <div class="card-header"><div><span class="eyebrow">BOOKING.COM Y AIRBNB</span><h2>Calendarios sincronizados</h2><p class="muted">Cada 30 minutos se leen las fechas ocupadas de Booking y Airbnb, y se bloquean en tu página. Tus reservas directas también se bloquean en las plataformas, así nunca se pisan.</p></div><button class="ghost-button" data-action="syncCalendars">Actualizar ahora</button></div>
+    <div class="sync-grid">
+      <article class="sync-box"><div class="sync-box-head"><b>Booking.com</b>${srcState('Booking.com')}</div>
+        <p class="muted">${evs.filter(e=>e.source==='Booking.com').length} fecha(s) ocupadas leídas.</p>
+        <span class="eyebrow">PEGAR EN BOOKING → “IMPORTAR CALENDARIO”</span>
+        <div class="copy-row"><input readonly value="${esc(site)}calendario-booking.ics"><button data-action="copyText" data-id="${esc(site)}calendario-booking.ics">Copiar</button></div></article>
+      <article class="sync-box"><div class="sync-box-head"><b>Airbnb</b>${srcState('Airbnb')}</div>
+        <p class="muted">${evs.filter(e=>e.source==='Airbnb').length} fecha(s) ocupadas leídas.</p>
+        <span class="eyebrow">PEGAR EN AIRBNB → “IMPORTAR CALENDARIO”</span>
+        <div class="copy-row"><input readonly value="${esc(site)}calendario-airbnb.ics"><button data-action="copyText" data-id="${esc(site)}calendario-airbnb.ics">Copiar</button></div></article>
+    </div>
+    <details class="howto"><summary>¿Cómo se conecta? (una sola vez)</summary><ol>
+      <li>En la extranet de Booking: <b>Tarifas y disponibilidad → Sincronizar calendarios → Exportar</b>. Copiá ese enlace. En Airbnb: <b>Calendario → Disponibilidad → Conectar calendarios → Exportar</b>.</li>
+      <li>En GitHub, en tu repositorio <b>villa-il-fanale-gestion</b>: <b>Settings → Secrets and variables → Actions → New repository secret</b>. Creá <code>BOOKING_ICS_URL</code> con el enlace de Booking y <code>AIRBNB_ICS_URL</code> con el de Airbnb.</li>
+      <li>Pegá en Booking y en Airbnb (en <b>Importar calendario</b>) los enlaces de arriba, así tus reservas directas se bloquean allá.</li>
+    </ol></details>
   </section>
-  <section class="connections-grid">
-    ${connectionCard('⌂','Página pública de reservas', state.settings.bookingEndpoint ? 'Recepción automática' : 'Lista para compartir', state.settings.bookingEndpoint?'ready':'manual', `Una vidriera propia de Villa il Fanale para mostrar la casa, calcular una estadía y recibir solicitudes. Si cargás un receptor automático, publicá cambios desde “Editar página” para que el sitio lo use.`, `<button class="primary-button" data-action="openPublicSite">Abrir página pública</button>${state.settings.bookingEndpoint&&state.settings.bookingAdminKey?`<button class="ghost-button" data-action="syncPublicRequests">Buscar solicitudes</button>`:''}`)}
-    ${connectionCard('▦','Airbnb Calendar', imported ? `${imported} eventos importados` : 'Todavía sin importar', imported?'ready':'manual', `Descargá el calendario de Airbnb como archivo .ics y cargalo acá. También podés guardar el enlace privado para tenerlo a mano.`, `<button class="primary-button" data-action="importCalendar">Importar archivo .ics</button>${state.settings.airbnbIcsUrl?`<button class="ghost-button" data-action="syncAirbnb">Intentar sincronizar</button>`:''}`)}
-    ${connectionCard('','Calendario de Apple','Importación manual','manual','En Calendario de Apple elegí Archivo → Exportar → Exportar y seleccioná el archivo .ics desde la aplicación.',`<button class="primary-button" data-action="importCalendar">Importar desde Apple</button>`)}
-    ${connectionCard('◉','Meta Business Suite','Facebook + Instagram','ready','Abrí la bandeja unificada para leer y responder mensajes de Facebook e Instagram. Desde ahí registrás la consulta en la app.',`<button class="primary-button" data-action="openMeta">Abrir bandeja de Meta</button>`)}
-    ${connectionCard('◌','Formulario de huéspedes','Conectado','ready','Abre el formulario real de Villa il Fanale para que el titular complete sus datos y condiciones.',`<button class="primary-button" data-action="openForm">Abrir formulario</button>`)}
-  </section>
+  <section class="card security-note"><span class="security-icon">⌂</span><div><b>Página pública de reservas</b><p>Los huéspedes eligen fechas en el calendario y te mandan la solicitud. ${state.settings.bookingEndpoint ? 'Las solicitudes entran solas a “Reservas”.' : 'Configurá el receptor automático abajo para que entren solas.'} <a href="${esc(site)}" target="_blank" rel="noopener">Abrir página</a></p></div></section>
   <section class="content-grid">
     <form class="card" id="connections-form">
-      <div class="card-header"><div><span class="eyebrow">ENLACES Y DATOS LOCALES</span><h2>Configurar conexiones</h2><p class="muted">Estos datos se guardan solamente en este dispositivo.</p></div></div>
+      <div class="card-header"><div><span class="eyebrow">TUS DATOS</span><h2>Datos de la casa y cobros</h2><p class="muted">Se usan en comprobantes y en los mensajes de WhatsApp. Se guardan cifrados con tu memoria.</p></div></div>
       <div class="form-grid">
         ${field('Nombre para comprobantes','owner','text','Nombre y apellido',false,undefined,undefined,state.settings.owner)}
         ${field('DNI para comprobantes','dni','text','Se guarda sólo localmente',false,undefined,undefined,state.settings.dni)}
         ${field('WhatsApp','phone','tel','Ej.: 358...',false,undefined,undefined,state.settings.phone)}
+        ${field('Alias para la seña','payAlias','text','Ej.: villa.fanale.mp',false,undefined,undefined,state.settings.payAlias||'')}
+        ${field('CBU / CVU','payCbu','text','Opcional',false,undefined,undefined,state.settings.payCbu||'')}
+        ${field('Titular de la cuenta','payHolder','text','Nombre que verá el huésped',false,undefined,undefined,state.settings.payHolder||'')}
+        ${field('Banco / billetera','payBank','text','Ej.: Mercado Pago',false,undefined,undefined,state.settings.payBank||'')}
         ${field('Facebook de Villa il Fanale','facebookUrl','url','https://facebook.com/...',false,undefined,undefined,state.settings.facebookUrl)}
         ${field('Instagram de Villa il Fanale','instagramUrl','url','https://instagram.com/...',false,undefined,undefined,state.settings.instagramUrl)}
         ${field('Enlace privado .ics de Airbnb','airbnbIcsUrl','url','https://www.airbnb.com/calendar/ical/...',false,undefined,undefined,state.settings.airbnbIcsUrl)}
@@ -730,10 +857,8 @@ function renderConnections() {
       <div class="form-actions"><button class="primary-button">Guardar configuración</button></div>
     </form>
     <div class="card">
-      <span class="eyebrow">INSTALACIÓN Y SEGURIDAD</span><h2>Usarla como aplicación</h2>
-      <p class="muted">Una vez publicada gratuitamente en una dirección HTTPS, podrás instalarla desde Safari o Chrome. Los datos seguirán siendo privados en cada dispositivo.</p>
-      <button class="primary-button" data-action="installApp" ${!installPrompt?'disabled':''}>${installPrompt?'Instalar ahora':'Disponible después de publicar'}</button>
-      <hr class="soft-rule">
+      <span class="eyebrow">TUS DATOS SEGUROS</span><h2>Memoria y respaldo</h2>
+      ${installPrompt?'<button class="ghost-button" data-action="installApp">Instalar como app en este dispositivo</button><hr class="soft-rule">':''}
       ${Cloud.panel()}
       <hr class="soft-rule">
       <h3>Historial automático</h3><p class="muted">La app guarda sola una foto de tus datos cada vez que trabajás. Si algo se borra, volvé a una versión anterior.</p>
@@ -744,7 +869,7 @@ function renderConnections() {
       <input type="file" id="backup-file" accept="application/json,.json" hidden>
     </div>
   </section>
-  <section class="card security-note"><span class="security-icon">⌁</span><div><b>Automatización sin costos mensuales</b><p>La página pública puede recibir solicitudes mediante una hoja privada de Google. Para activarla hará falta una única autorización de tu cuenta; Facebook, Instagram y WhatsApp mantienen sus propias limitaciones y permisos.</p></div></section>`;
+  <section class="card more-tools"><span class="eyebrow">MÁS HERRAMIENTAS</span><div class="row-actions">${navSecondary.map(([k,,l]) => `<button class="ghost-button" data-route-go="${k}">${l}</button>`).join('')}</div></section>`;
 }
 
 function connectionCard(icon,title,status,tone,body,actions) {
@@ -755,7 +880,7 @@ function saveConnections(event) {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(event.currentTarget));
   Object.assign(state.settings, values);
-  saveState('Conexiones guardadas en este dispositivo');
+  saveState('Ajustes guardados');
   render();
 }
 
@@ -802,7 +927,7 @@ async function syncPublicRequests(silent = false) {
         created: normalizeRequestDate(item.createdAt) || todayISO(),
         name: item.name || 'Consulta desde la web', phone: String(item.phone || ''),
         guests: Number(item.guests || 1), checkin: normalizeRequestDate(item.checkin), checkout: normalizeRequestDate(item.checkout),
-        channel: 'Página web', status: 'nueva', nightly: 0,
+        channel: 'Página web', status: 'nueva', nightly: 0, estimatedTotal: Number(item.estimatedTotal || 0),
         notes: [item.message, item.estimatedTotal ? `Estimación web: ${money(Number(item.estimatedTotal))}` : ''].filter(Boolean).join(' · ')
       });
       added += 1;
@@ -810,8 +935,8 @@ async function syncPublicRequests(silent = false) {
     saveState();
     if (!silent) {
       toast(added ? `${added} solicitud${added===1?' nueva':'es nuevas'} recibida${added===1?'':'s'}` : 'No hay solicitudes nuevas');
-      navigate('consultas');
-    } else if (route === 'consultas' && added) render();
+      navigate('reservas');
+    } else if (route === 'reservas' && added) render();
   } catch {
     if (!silent) toast('No se pudo consultar la página pública. Revisá la conexión.');
   }
@@ -867,7 +992,7 @@ function openLeadModal() {
   </div><div id="quote-result"></div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar consulta</button></div></form>`);
   const form = document.querySelector('#lead-form');
   ['checkin','checkout','guests'].forEach(name=>form.elements[name].addEventListener('change',()=>updateQuote(form)));
-  form.addEventListener('submit', event => { event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); const suggestion=suggestPrice(data.checkin,data.checkout); data.id=uid(); data.created=todayISO(); data.status=data.status||'nueva'; data.nightly=Number(data.nightly||suggestion.nightly); data.guests=Number(data.guests); state.leads.push(data); saveState('Consulta guardada'); closeModal(); navigate('consultas'); });
+  form.addEventListener('submit', event => { event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); const suggestion=suggestPrice(data.checkin,data.checkout); data.id=uid(); data.created=todayISO(); data.status=data.status||'nueva'; data.nightly=Number(data.nightly||suggestion.nightly); data.guests=Number(data.guests); state.leads.push(data); saveState('Consulta guardada'); closeModal(); navigate('reservas'); });
   bindModal();
 }
 function updateQuote(form) {
@@ -923,7 +1048,7 @@ function openReservationModal(lead=null, existing=null) {
       if(delta<0)state.movements.push({id:uid(),type:'reversal',label:`Ajuste de pago · ${data.guest}`,amount:Math.abs(delta),currency:data.currency,date:todayISO(),reservationId:existing.id});
       saveState('Reserva actualizada'); closeModal(); render(); return;
     }
-    data.id=uid(); data.receipt=nextReceipt(); data.created=todayISO(); data.status='confirmed'; state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,currency:data.currency,date:todayISO(),reservationId:data.id}); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada'); closeModal(); navigate('calendario'); });
+    data.id=uid(); data.receipt=nextReceipt(); data.created=todayISO(); data.status='confirmed'; if(form.dataset.externalUid) data.externalUid=form.dataset.externalUid; state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,currency:data.currency,date:todayISO(),reservationId:data.id}); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada'); closeModal(); navigate('calendario'); });
   bindModal();
 }
 
@@ -943,7 +1068,7 @@ function openInventoryModal() {
 
 function openReservationDetails(id) {
   const r=state.reservations.find(x=>x.id===id); if(!r)return; const cancelled=r.status==='cancelled'; const balance=cancelled?0:Number(r.total)-Number(r.paid||0);
-  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total, rCur(r))}${r.arsEquivalent?` <small class="muted">(≈ ${money(r.arsEquivalent)})</small>`:''}<br>Pagado ${money(cancelled?0:r.paid, rCur(r))}<br><b>Saldo ${money(balance, rCur(r))}</b></p></div>${r.bookingRef?`<div class="field full"><span class="eyebrow">BOOKING.COM</span><p>Reserva N° ${esc(r.bookingRef)}</p></div>`:''}${r.notes?`<div class="field full"><span class="eyebrow">NOTAS</span><p>${esc(r.notes)}</p></div>`:''}<div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button><button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
+  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA${r.status==='pending'?' · <span style="color:#a46a00">ESPERANDO SEÑA</span>':''}</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total, rCur(r))}${r.arsEquivalent?` <small class="muted">(≈ ${money(r.arsEquivalent)})</small>`:''}<br>Pagado ${money(cancelled?0:r.paid, rCur(r))}<br><b>Saldo ${money(balance, rCur(r))}</b></p></div>${r.bookingRef?`<div class="field full"><span class="eyebrow">BOOKING.COM</span><p>Reserva N° ${esc(r.bookingRef)}</p></div>`:''}${r.notes?`<div class="field full"><span class="eyebrow">NOTAS</span><p>${esc(r.notes)}</p></div>`:''}<div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button>${r.status==='pending'?`<button class="primary-button" data-action="confirmDeposit" data-id="${r.id}">Registrar seña</button>`:''}${r.phone?`<button class="ghost-button" data-action="whatsappGuest" data-id="${r.id}">WhatsApp</button>`:''}<button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0&&r.status!=='pending'?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
   bindModal(); const print=document.querySelector('#print-receipt');if(print)print.addEventListener('click',()=>printReceipt(r)); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,currency:rCur(r),date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
 }
 
@@ -1170,6 +1295,125 @@ function matchICS(chunk,key){const line=chunk.split(/\r?\n/).find(l=>l.startsWit
 function parseICSDate(value){if(!value)return'';const v=value.slice(0,8);return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;}
 
 function toast(message){const root=document.querySelector('#toast-root');root.innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>root.innerHTML='',Math.min(8500, Math.max(2800, String(message).length * 55)));}
+
+/* ===== Solicitudes, seña y WhatsApp ===== */
+function paymentText(amount, cur = 'ARS') {
+  const st = state.settings; const parts = [];
+  if (st.payAlias) parts.push(`Alias: ${st.payAlias}`);
+  if (st.payCbu) parts.push(`CBU/CVU: ${st.payCbu}`);
+  if (st.payHolder) parts.push(`Titular: ${st.payHolder}`);
+  if (st.payBank) parts.push(`Banco: ${st.payBank}`);
+  return parts.length ? `\n\nPara confirmar, la seña es de ${money(amount, cur)}:\n${parts.join('\n')}\n\nCuando hagas la transferencia mandame el comprobante por acá. ¡Gracias!` : `\n\nPara confirmar, la seña es de ${money(amount, cur)}. Te paso los datos para transferir.`;
+}
+function openWhatsAppTo(phone, text) {
+  const number = normalizeWhatsApp(phone);
+  if (!number) return toast('Este huésped no tiene teléfono cargado');
+  window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, '_blank');
+}
+function openAcceptLeadModal(id) {
+  const l = state.leads.find(x => x.id === id); if (!l) return;
+  const total = Number(l.estimatedTotal || 0) || suggestPrice(l.checkin, l.checkout, l.nightly).total;
+  const pct = Number(state.publicContent.depositPercent || 50);
+  openModal(`Aceptar a ${esc(l.name)}`, `<form id="accept-form"><p class="muted">Se crea la reserva <b>esperando seña</b>: las fechas quedan bloqueadas en tu página, Booking y Airbnb. Después se abre WhatsApp con el mensaje listo.</p>
+    <div class="form-grid">
+      <label class="field"><span>Total</span><input name="total" type="number" step="any" min="0" required value="${total}"></label>
+      <label class="field"><span>Seña a pedir</span><input name="deposit" type="number" step="any" min="0" required value="${Math.round(total * pct / 100)}"></label>
+      ${textareaField('Mensaje','message','',`Hola ${l.name}, ¡gracias por elegir Villa il Fanale! Tenemos disponible del ${dateLabel(l.checkin)} al ${dateLabel(l.checkout)} para ${l.guests} persona${Number(l.guests)===1?'':'s'}. El total es ${money(total)}.${paymentText(Math.round(total * pct / 100))}`)}
+    </div>${state.settings.payAlias || state.settings.payCbu ? '' : '<div class="quote-box"><b>Tip:</b><p style="margin:5px 0 0">Cargá tu alias o CBU en Ajustes y va a aparecer solo en este mensaje.</p></div>'}
+    <div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Aceptar y abrir WhatsApp</button></div></form>`);
+  bindModal();
+  const form = document.querySelector('#accept-form');
+  const refresh = () => { const t = Number(form.elements.total.value || 0), d = Number(form.elements.deposit.value || 0); form.elements.message.value = `Hola ${l.name}, ¡gracias por elegir Villa il Fanale! Tenemos disponible del ${dateLabel(l.checkin)} al ${dateLabel(l.checkout)} para ${l.guests} persona${Number(l.guests)===1?'':'s'}. El total es ${money(t)}.${paymentText(d)}`; };
+  form.elements.total.addEventListener('input', () => { form.elements.deposit.value = Math.round(Number(form.elements.total.value || 0) * pct / 100); refresh(); });
+  form.elements.deposit.addEventListener('input', refresh);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (!checkAvailability(l.checkin, l.checkout)) return toast('Esas fechas ya están ocupadas');
+    const total = Number(form.elements.total.value || 0), deposit = Number(form.elements.deposit.value || 0);
+    const r = { id: uid(), receipt: nextReceipt(), created: todayISO(), status: 'pending', guest: l.name, phone: l.phone, checkin: l.checkin, checkout: l.checkout, guests: Number(l.guests || 1), nights: nightCount(l.checkin, l.checkout), channel: 'Página web', currency: 'ARS', total, paid: 0, depositRequested: deposit, notes: l.notes || '', leadId: l.id };
+    state.reservations.push(r); l.status = 'convertida';
+    saveState('Reserva creada: esperando seña');
+    openWhatsAppTo(l.phone, form.elements.message.value);
+    closeModal(); render();
+  });
+}
+function dismissLead(id) { const l = state.leads.find(x => x.id === id); if (!l) return; l.status = 'descartada'; saveState('Solicitud descartada'); render(); }
+function openDepositModal(id) {
+  const r = state.reservations.find(x => x.id === id); if (!r) return;
+  openModal('Registrar seña', `<form id="deposit-form"><p>${esc(r.guest)} · ${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</p><div class="form-grid"><label class="field"><span>Importe recibido</span><input name="amount" type="number" step="any" min="0" required value="${r.depositRequested || Math.round(Number(r.total) / 2)}"></label>${field('Fecha','date','date','',true,undefined,undefined,todayISO())}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Confirmar reserva</button></div></form>`);
+  bindModal();
+  const form = document.querySelector('#deposit-form');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const amount = Number(form.elements.amount.value || 0);
+    r.paid = Number(r.paid || 0) + amount; r.status = 'confirmed';
+    if (amount > 0) state.movements.push({ id: uid(), type: 'income', label: `Seña · ${r.guest}`, amount, currency: rCur(r), date: form.elements.date.value, reservationId: r.id });
+    saveState('Seña registrada: reserva confirmada'); closeModal(); render();
+    if (r.phone) {
+      openModal('¡Reserva confirmada!', `<p>¿Le mandás a ${esc(r.guest)} la confirmación por WhatsApp?</p><div class="form-actions"><button class="ghost-button" data-close>Ahora no</button><button class="primary-button" id="send-confirm">Enviar confirmación</button></div>`);
+      bindModal();
+      document.querySelector('#send-confirm').addEventListener('click', () => { openWhatsAppTo(r.phone, `¡Hola ${r.guest}! Recibimos la seña, tu reserva en Villa il Fanale del ${dateLabel(r.checkin)} al ${dateLabel(r.checkout)} quedó confirmada. El check-in es desde las ${state.settings.checkin || '15:00'} h. ¡Los esperamos!`); closeModal(); });
+    }
+  });
+}
+function whatsappGuest(id) {
+  const r = state.reservations.find(x => x.id === id); if (!r) return;
+  openWhatsAppTo(r.phone, `Hola ${r.guest}, ¿cómo estás? Te escribo de Villa il Fanale por tu estadía del ${dateLabel(r.checkin)} al ${dateLabel(r.checkout)}.`);
+}
+function copyText(text) { navigator.clipboard?.writeText(text).then(() => toast('Copiado')).catch(() => toast(text)); }
+function completeExternal(uidValue) {
+  const e = Externals.events.find(x => x.uid === uidValue); if (!e) return;
+  openReservationModal({ name: '', checkin: e.start, checkout: e.end, channel: e.source, guests: 2, externalUid: e.uid }, null);
+  const form = document.querySelector('#reservation-form'); if (!form) return;
+  form.elements.channel.value = e.source; form.elements.currency.value = 'USD'; form.dispatchEvent(new Event('change'));
+  form.elements.channel.dispatchEvent(new Event('change')); form.elements.currency.dispatchEvent(new Event('change'));
+  form.dataset.externalUid = e.uid;
+}
+
+/* ===== Calendarios de Booking y Airbnb (los sincroniza GitHub cada 30 min) ===== */
+const Externals = (() => {
+  let events = [], sources = {}, updatedAt = '';
+  const ignored = () => new Set(state.meta?.ignoredExternal || []);
+  function matches(e, r) { return r.externalUid === e.uid || (r.checkin === e.start && r.checkout === e.end) || (r.channel === e.source && rangesOverlap(r.checkin, r.checkout, e.start, e.end)); }
+  function unmatched() { const today = todayISO(); return events.filter(e => e.end >= today && !ignored().has(e.uid) && !state.reservations.some(r => r.status !== 'cancelled' && matches(e, r))); }
+  async function refresh(manual) {
+    try {
+      const base = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'reservar/' : 'reservar/';
+      const response = await fetch(`${base}ocupado-externo.json?v=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('sin archivo');
+      const data = await response.json(); events = data.events || []; sources = data.sources || {}; updatedAt = data.updatedAt || '';
+      if (manual) toast(events.length ? `${events.length} fecha${events.length===1?'':'s'} de Booking/Airbnb al día` : 'Sin fechas nuevas de Booking/Airbnb');
+      if (['inicio','reservas','calendario','conexiones'].includes(route)) render();
+    } catch { if (manual) toast('Todavía no hay calendarios conectados'); }
+  }
+  return { refresh, unmatched, get events() { return events; }, get sources() { return sources; }, get updatedAt() { return updatedAt; } };
+})();
+
+/* ===== Publicar disponibilidad (sin nombres) para la página y las plataformas ===== */
+const Availability = (() => {
+  let timer = null;
+  function ranges() {
+    const list = activeReservations().map(r => ({ id: r.id, start: r.checkin, end: r.checkout, source: r.channel === 'Booking.com' ? 'Booking.com' : r.channel === 'Airbnb' ? 'Airbnb' : 'Directa' }));
+    state.blocks.forEach(b => list.push({ id: b.id, start: b.start, end: plusDay(b.end), source: 'Directa' }));
+    const today = todayISO();
+    return list.filter(r => r.end >= today).sort((a, b) => a.start.localeCompare(b.start));
+  }
+  function schedule() {
+    if (!sessionStorage.getItem(ADMIN_SESSION_KEY)) return;
+    clearTimeout(timer); timer = setTimeout(publish, 4000);
+  }
+  async function publish() {
+    const list = ranges(); const hash = JSON.stringify(list);
+    if (state.meta?.availabilityHash === hash) return;
+    const token = sessionStorage.getItem(ADMIN_SESSION_KEY); if (!token) return;
+    try {
+      await githubPutFile('reservar/ocupado.json', textToBase64(JSON.stringify({ updatedAt: new Date().toISOString(), ranges: list }, null, 2) + '\n'), 'Actualizar disponibilidad', token);
+      state.meta.availabilityHash = hash; state.meta.availabilityAt = Date.now();
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    } catch (error) { console.warn('No se pudo publicar la disponibilidad', error); }
+  }
+  return { schedule, publish, ranges };
+})();
 
 /* =====================================================================
    MEMORIA: los datos se guardan en 3 lugares para que no se pierdan.

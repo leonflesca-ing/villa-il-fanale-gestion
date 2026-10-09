@@ -1,0 +1,39 @@
+name: Sincronizar calendarios
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['reservar/ocupado.json']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: calendarios
+  cancel-in-progress: false
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Leer Booking y Airbnb y generar calendarios
+        env:
+          BOOKING_ICS_URL: ${{ secrets.BOOKING_ICS_URL }}
+          AIRBNB_ICS_URL: ${{ secrets.AIRBNB_ICS_URL }}
+        run: node scripts/sincronizar-calendarios.mjs
+      - name: Guardar cambios
+        run: |
+          git config user.name "Villa il Fanale (sincronización)"
+          git config user.email "actions@users.noreply.github.com"
+          git add reservar/ocupado-externo.json reservar/calendario-booking.ics reservar/calendario-airbnb.ics 2>/dev/null || true
+          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          git commit -m "Actualizar disponibilidad de Booking y Airbnb"
+          git pull --rebase origin main
+          git push
