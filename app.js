@@ -312,7 +312,7 @@ function renderDashboard() {
   const next = upcoming.find(r => r.checkin >= today) || upcoming[0];
   const income = incomeByCurrency();
   const due = upcoming.reduce((acc, r) => { const b = Number(r.total) - Number(r.paid || 0); if (b > 0) acc[rCur(r)] += b; return acc; }, { ARS: 0, USD: 0 });
-  const requests = state.leads.filter(l => l.status === 'nueva' || l.status === 'presupuesto');
+  const requests = state.leads.filter(l => (l.status === 'nueva' || l.status === 'presupuesto') && (l.checkout || '9999') >= today);
   const pending = activeReservations().filter(r => r.status === 'pending');
   const toComplete = Externals.unmatched();
   const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date(`${today}T12:00:00`)) / 86400000) : null;
@@ -379,7 +379,7 @@ let reservationTab = 'proximas', reservationSearch = '';
 function channelClass(channel) { return ({ 'Booking.com': 'ch-booking', Airbnb: 'ch-airbnb', 'Página web': 'ch-web' })[channel] || 'ch-direct'; }
 function renderReservations() {
   const today = todayISO(); const q = reservationSearch.trim().toLowerCase();
-  const requests = state.leads.filter(l => l.status === 'nueva' || l.status === 'presupuesto').sort((a,b) => (a.checkin||'').localeCompare(b.checkin||''));
+  const requests = state.leads.filter(l => (l.status === 'nueva' || l.status === 'presupuesto') && (l.checkout || '9999') >= today).sort((a,b) => (a.checkin||'').localeCompare(b.checkin||''));
   const toComplete = Externals.unmatched();
   const groups = {
     proximas: activeReservations().filter(r => r.checkout >= today && r.status !== 'pending').sort((a,b) => a.checkin.localeCompare(b.checkin)),
