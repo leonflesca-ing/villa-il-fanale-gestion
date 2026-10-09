@@ -711,7 +711,8 @@ async function publishPublicPage() {
       setTimeout(() => { button.disabled = false; button.textContent = 'Publicar cambios'; }, 2200);
     }
   } catch (error) {
-    toast(error.message || 'No se pudo publicar. Revisá los permisos de la clave.');
+    if (/Contents|not accessible|permiso/i.test(error.message || '')) showTokenHelp();
+    else toast(error.message || 'No se pudo publicar. Revisá los permisos de la clave.');
   } finally {
     if (button && !published) { button.disabled = false; button.textContent = 'Publicar cambios'; }
   }
@@ -797,6 +798,13 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.0','')} MB`;
 }
 function previewPublicPage() { window.open(`${state.settings.publicSiteUrl}?v=${Date.now()}`, '_blank'); }
+function showTokenHelp() {
+  openModal('Tu clave de GitHub no puede guardar cambios', `<p>La clave con la que entraste sólo tiene permiso para <b>leer</b>. Para publicar la página (y para la memoria en la nube) necesita permiso para <b>escribir</b>.</p>
+    <ol class="help-steps"><li>Abrí <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">GitHub → Fine-grained tokens</a> y tocá tu clave.</li><li>En <b>Repository access</b> elegí <b>Only select repositories</b> → <b>villa-il-fanale-gestion</b>.</li><li>En <b>Permissions → Repository permissions → Contents</b> elegí <b>Read and write</b>.</li><li>Guardá con <b>Update</b>. La clave sigue siendo la misma: no hace falta volver a entrar.</li><li>Volvé acá y tocá <b>Publicar cambios</b> de nuevo.</li></ol>
+    <p class="muted">Tus cambios no se perdieron: quedaron guardados en este dispositivo.</p>
+    <div class="form-actions"><button class="ghost-button" data-close>Cerrar</button><a class="primary-button" href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">Abrir GitHub</a></div>`);
+  bindModal();
+}
 function logoutAdmin() { sessionStorage.removeItem(ADMIN_SESSION_KEY); location.reload(); }
 function postCopy(type) {
   const variants = {

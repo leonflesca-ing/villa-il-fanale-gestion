@@ -452,3 +452,5 @@ body.modal-open { overflow: hidden; }
 .calendar-toolbar h2 { text-transform: none; }
 .card-header .row-actions .ghost-button { border: 1px solid var(--line); background: transparent; }
 @media (max-width: 760px) { .res-row .channel-dot { display: none; } .res-row { border-left: 4px solid var(--line); } }
+.help-steps { margin: 12px 0; padding-left: 20px; line-height: 1.7; } .help-steps a { color: var(--pine); font-weight: 700; }
+a.primary-button { display: inline-flex; align-items: center; text-decoration: none; padding: 11px 16px; border-radius: 12px; }
