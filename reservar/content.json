@@ -3,13 +3,13 @@
   "heroTitle": "Una casa con alma",
   "heroSubtitle": "de sierra.",
   "heroDescription": "Un loft amplio entre árboles, madera y silencio. Hasta cinco personas, con todo lo necesario para disfrutar sin apuro.",
-  "heroImage": "../assets/pagina-heroImage-1791517473551.jpg",
+  "heroImage": "../assets/pagina-heroImage-1791517967598.jpg",
   "introEyebrow": "EL ENCANTO DE LO SIMPLE",
   "introTitle": "Un refugio serrano",
   "introSubtitle": "para volver al ritmo propio.",
   "introCopyOne": "Villa il Fanale es un loft cómodo y generoso, ubicado en una zona semicéntrica de Alpa Corral. Su gran galería y su jardín invitan a pasar más tiempo afuera; su interior de techos altos, madera y objetos con historia conserva la calidez de una verdadera casa de las sierras.",
   "introCopyTwo": "Está completamente equipada para cocinar, compartir y descansar en familia o con amigos.",
-  "featureImage": "../assets/pagina-featureImage-1791517471360.jpg",
+  "featureImage": "../assets/pagina-featureImage-1791517969676.jpg",
   "featureCaptionSmall": "El corazón de la casa",
   "featureCaption": "Un único espacio, muchas maneras de habitarlo.",
   "spacesEyebrow": "RECORRÉ VILLA IL FANALE",
@@ -80,7 +80,7 @@
     },
     {
       "id": "gallery-2",
-      "image": "../assets/pagina-galleryItem-gallery-2-1791517476103.jpg",
+      "image": "../assets/pagina-galleryItem-gallery-2-1791517971896.jpg",
       "caption": "Altillo matrimonial"
     },
     {
@@ -95,17 +95,17 @@
     },
     {
       "id": "gallery-5",
-      "image": "../assets/rincon.png",
+      "image": "../assets/pagina-galleryItem-gallery-5-1791517973978.jpg",
       "caption": "Rincones con historia"
     },
     {
       "id": "mqvr5kkoe9cva",
-      "image": "../assets/pagina-galleryItem-mqvr5kkoe9cva-1782528056834.jpg",
+      "image": "../assets/pagina-galleryItem-mqvr5kkoe9cva-1791517975821.jpg",
       "caption": "Loft"
     },
     {
       "id": "mv0eya2qmbmm0",
-      "image": "../assets/pagina-galleryItem-mv0eya2qmbmm0-1791517477844.jpg",
+      "image": "../assets/pagina-galleryItem-mv0eya2qmbmm0-1791517977561.jpg",
       "caption": "Comedor"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "id": "mv0ezsqqo06j8",
-      "image": "../assets/pagina-galleryItem-mv0ezsqqo06j8-1791517484081.jpg",
+      "image": "../assets/pagina-galleryItem-mv0ezsqqo06j8-1791517979815.jpg",
       "caption": "."
     }
   ],
