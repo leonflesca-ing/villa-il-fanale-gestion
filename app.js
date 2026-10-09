@@ -9,7 +9,11 @@ const GITHUB_READ_TIMEOUT_MS = 18000;
 const GITHUB_WRITE_TIMEOUT_MS = 60000;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-const money = value => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value || 0);
+const money = (value, currency = 'ARS') => currency === 'USD'
+  ? `US$ ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value) || 0)}`
+  : new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value) || 0);
+const CHANNELS = ['Booking.com','WhatsApp','Airbnb','Instagram','Facebook','Página web','Calendario importado'];
+const rCur = r => (r && r.currency === 'USD') ? 'USD' : 'ARS';
 const dateLabel = value => value ? new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : 'Sin fecha';
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 
@@ -88,13 +92,29 @@ function publicGalleryItems(content = state.publicContent || defaultState.public
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return saved ? { ...defaultState, ...saved, settings: { ...defaultState.settings, ...saved.settings }, publicContent: { ...defaultState.publicContent, ...saved.publicContent } } : structuredClone(defaultState);
+    return saved ? normalizeState(saved) : structuredClone(defaultState);
   } catch { return structuredClone(defaultState); }
 }
-function saveState(message) {
+function normalizeState(saved) {
+  const next = { ...structuredClone(defaultState), ...saved, settings: { ...defaultState.settings, ...saved.settings }, publicContent: { ...defaultState.publicContent, ...saved.publicContent } };
+  next.meta = { updatedAt: 0, ...(saved.meta || {}) };
+  if (!next.meta.autoTasksRemoved) {
+    // Las tareas que la app creaba sola con cada reserva ya no se usan.
+    next.tasks = (next.tasks || []).filter(task => !task.reservationId);
+    next.meta.autoTasksRemoved = true;
+  }
+  return next;
+}
+function saveState(message, options = {}) {
+  state.meta = { ...(state.meta || {}), updatedAt: options.keepTimestamp ? (state.meta?.updatedAt || Date.now()) : Date.now() };
+  let ok = true;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-  catch { toast('No queda espacio para guardar más imágenes. Eliminá alguna foto agregada.'); return false; }
-  if (message) toast(message);
+  catch { ok = false; }
+  Memory.mirror(state);
+  Memory.maybeSnapshot(state);
+  if (!options.skipCloud) Cloud.schedulePush();
+  if (!ok) toast('El navegador no deja guardar más aquí. Quedó guardado en la memoria de respaldo; eliminá alguna foto agregada.');
+  else if (message) toast(message);
   return true;
 }
 
@@ -124,11 +144,13 @@ async function init() {
   startApplication();
 }
 
-function startApplication() {
+async function startApplication() {
+  await Memory.init();
   renderNav();
   bindGlobal();
   fetchHolidays();
   render();
+  Cloud.start();
   registerServiceWorker();
   if (state.settings.bookingEndpoint && state.settings.bookingAdminKey) syncPublicRequests(true);
 }
@@ -169,10 +191,11 @@ function navButton([key, icon, label]) {
   return `<button class="nav-item ${route === key ? 'active' : ''}" data-route="${key}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`;
 }
 function navigate(next) {
+  const changed = route !== next;
   route = next;
   document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.route === route));
   render();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (changed) { window.scrollTo({ top: 0 }); const app = document.querySelector('#app'); app.classList.remove('page-in'); void app.offsetWidth; app.classList.add('page-in'); }
 }
 function render() {
   const [kicker, title] = meta[route];
@@ -182,6 +205,8 @@ function render() {
   const pages = { inicio: renderDashboard, consultas: renderLeads, calendario: renderCalendar, tareas: renderTasks, finanzas: renderFinances, inventario: renderInventory, contenido: renderContent, pagina: renderPublicEditor, asistente: renderAssistant, conexiones: renderConnections };
   document.querySelector('#app').innerHTML = pages[route]();
   bindPage();
+  if (route === 'conexiones') Memory.renderList();
+  Cloud.renderStatus();
 }
 
 function bindGlobal() {
@@ -245,7 +270,9 @@ function handleAction(action, id) {
     exportBackup: exportBackup, importBackup: () => document.querySelector('#backup-file')?.click(),
     publishPublicPage: publishPublicPage,
     previewPublicPage: previewPublicPage, logoutAdmin: logoutAdmin,
-    addPublicGalleryItem: addPublicGalleryItem
+    addPublicGalleryItem: addPublicGalleryItem,
+    cloudSetup: () => Cloud.openSetup(), cloudSyncNow: () => Cloud.syncNow(true), cloudForget: () => Cloud.forgetDevice(),
+    restoreSnapshot: () => Memory.restore(Number(id))
   };
   actions[action]?.();
 }
@@ -254,7 +281,8 @@ function renderDashboard() {
   const upcoming = activeReservations().filter(r => r.checkout >= todayISO()).sort((a,b) => a.checkin.localeCompare(b.checkin));
   const next = upcoming[0];
   const pendingTasks = state.tasks.filter(t => !t.done).length;
-  const confirmedIncome = sumMovements('income');
+  const income = incomeByCurrency();
+  const due = upcoming.reduce((acc, r) => { const b = Number(r.total) - Number(r.paid || 0); if (b > 0) acc[rCur(r)] += b; return acc; }, { ARS: 0, USD: 0 });
   const activeLeads = state.leads.filter(l => l.status !== 'convertida').length;
   const daysToNext = next ? Math.ceil((new Date(`${next.checkin}T12:00:00`) - new Date()) / 86400000) : null;
   return `
@@ -262,7 +290,7 @@ function renderDashboard() {
       <div class="hero-copy">
         <span class="eyebrow" style="color:#ead6ae">LOFT SERRANO · DESDE 1981</span>
         <h2>${next ? `Próxima llegada:<br>${esc(next.guest)}` : 'La villa está lista<br>para su próxima historia'}</h2>
-        <p>${next ? `${dateLabel(next.checkin)} · ${next.guests} huéspedes · ${next.nights} noches. ${tasksForReservation(next.id).filter(t => !t.done).length} tareas pendientes.` : 'Todavía no hay una llegada próxima. Registrá una consulta o una reserva para poner el sistema en movimiento.'}</p>
+        <p>${next ? `${dateLabel(next.checkin)} · ${next.guests} huéspedes · ${next.nights} noche${next.nights===1?'':'s'}${daysToNext !== null ? ` · ${daysToNext <= 0 ? 'llega hoy' : `faltan ${daysToNext} día${daysToNext===1?'':'s'}`}` : ''}.` : 'Todavía no hay una llegada próxima. Registrá una consulta o una reserva para poner el sistema en movimiento.'}</p>
         <div class="hero-actions">
           <button class="secondary-button" data-action="newLead">Registrar consulta manual</button>
           <button class="ghost-button" style="color:white;border-color:rgba(255,255,255,.4)" data-action="newReservation">Cargar reserva</button>
@@ -271,18 +299,19 @@ function renderDashboard() {
     </section>
     <section class="stats-grid">
       ${stat('Consultas activas', activeLeads, 'Señales de demanda')}
-      ${stat('Próximas estadías', upcoming.length, 'Reservas con seña')}
-      ${stat('Tareas pendientes', pendingTasks, pendingTasks ? 'Para poner al día' : 'Todo en orden')}
-      ${stat('Ingresos registrados', money(confirmedIncome), 'Histórico cargado')}
+      ${stat('Próximas estadías', upcoming.length, 'Reservas confirmadas')}
+      ${stat('Por cobrar', amountPair(due), 'Saldos de próximas estadías')}
+      ${stat('Ingresos registrados', amountPair(income), 'Histórico cargado')}
     </section>
+    ${Cloud.banner()}
     <section class="content-grid">
       <div class="card">
         <div class="card-header"><div><span class="eyebrow">PRÓXIMAMENTE</span><h2>Llegadas</h2></div><button class="ghost-button" data-route="calendario" onclick="navigate('calendario')">Ver calendario</button></div>
         ${upcoming.length ? `<div class="list">${upcoming.slice(0,4).map(reservationRow).join('')}</div>` : empty('⌂','Sin reservas próximas','Cuando recibas una seña, la estadía aparecerá acá.')}
       </div>
       <div class="card">
-        <div class="card-header"><div><span class="eyebrow">ATENCIÓN</span><h2>Para resolver</h2></div></div>
-        ${pendingTasks ? `<div class="list">${state.tasks.filter(t=>!t.done).slice(0,5).map(taskMini).join('')}</div>` : empty('✓','Todo tranquilo','No hay tareas pendientes.')}
+        <div class="card-header"><div><span class="eyebrow">ATENCIÓN</span><h2>Para resolver</h2></div><button class="ghost-button" data-action="addTask">＋ Tarea</button></div>
+        ${pendingTasks ? `<div class="list">${state.tasks.filter(t=>!t.done).slice(0,5).map(taskMini).join('')}</div>` : empty('✓','Todo tranquilo','No hay pendientes. Si necesitás anotar algo, agregalo con “＋ Tarea”.')}
         ${daysToNext !== null && daysToNext <= 2 ? `<div class="quote-box"><b>Recordatorio de llegada</b><p style="margin:5px 0 0">${esc(next.guest)} ingresa ${daysToNext <= 0 ? 'hoy' : `en ${daysToNext} día${daysToNext===1?'':'s'}`}.</p></div>` : ''}
       </div>
     </section>`;
@@ -291,7 +320,7 @@ function stat(label, value, note) { return `<article class="stat-card"><span cla
 function empty(icon, title, note) { return `<div class="empty"><span class="empty-icon">${icon}</span><b>${title}</b><p>${note}</p></div>`; }
 function reservationRow(r) {
   const cancelled = r.status === 'cancelled'; const balance = cancelled ? 0 : Number(r.total) - Number(r.paid || 0);
-  return `<div class="list-item ${cancelled?'cancelled-row':''}"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes</p></div><div class="row-actions"><span class="pill ${cancelled?'rust':''}"><span class="dot"></span>${cancelled?'Cancelada':'Confirmada'}</span><button data-action="details" data-id="${r.id}">${cancelled?'Ver historial':balance > 0 ? `Saldo ${money(balance)}` : 'Ver'}</button></div></div>`;
+  return `<div class="list-item ${cancelled?'cancelled-row':''}"><div class="list-item-main"><b>${esc(r.guest)}</b><p>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)} · ${r.guests} huéspedes${r.channel?` · ${esc(r.channel)}`:''}</p></div><div class="row-actions"><span class="pill ${cancelled?'rust':''}"><span class="dot"></span>${cancelled?'Cancelada':'Confirmada'}</span><button data-action="details" data-id="${r.id}">${cancelled?'Ver historial':balance > 0 ? `Saldo ${money(balance, rCur(r))}` : 'Ver'}</button></div></div>`;
 }
 function taskMini(t) { return `<div class="list-item"><div class="list-item-main"><b>${esc(t.title)}</b><p>${esc(t.category)} · ${t.due ? dateLabel(t.due) : 'Sin fecha'}</p></div></div>`; }
 
@@ -333,7 +362,7 @@ function calendarDay(d, shownMonth) {
 }
 function renderTasks() {
   const open = state.tasks.filter(t=>!t.done), done = state.tasks.filter(t=>t.done);
-  return `<section class="card"><div class="card-header"><div><span class="eyebrow">CHECKLIST OPERATIVO</span><h2>Preparar Villa il Fanale</h2><p class="muted">Cada reserva crea su lista automáticamente. Las fotos son opcionales.</p></div><button class="primary-button" data-action="addTask">＋ Nueva tarea</button></div>
+  return `<section class="card"><div class="card-header"><div><span class="eyebrow">CHECKLIST OPERATIVO</span><h2>Preparar Villa il Fanale</h2><p class="muted">Anotá acá lo que quieras recordar. Ya no se crean tareas automáticas con cada reserva.</p></div><button class="primary-button" data-action="addTask">＋ Nueva tarea</button></div>
   ${open.length ? groupTasks(open) : empty('✓','No hay tareas pendientes','La casa está al día.')}
   ${done.length ? `<details><summary>${done.length} tareas terminadas</summary>${groupTasks(done)}</details>` : ''}</section>`;
 }
@@ -343,11 +372,24 @@ function groupTasks(tasks) {
 }
 
 function renderFinances() {
-  const income = sumMovements('income'), expenses = sumMovements('expense'), balance = income-expenses;
+  const inc = incomeByCurrency(), exp = expensesByCurrency();
+  const income = inc.ARS, expenses = exp.ARS, balance = income-expenses;
   return `<section class="card"><div class="card-header"><div><span class="eyebrow">CONTROL SIMPLE</span><h2>Ingresos de la villa</h2><p class="muted">Empezamos por ingresos; los gastos pueden sumarse cuando lo necesites.</p></div><button class="primary-button" data-action="addMovement">＋ Registrar movimiento</button></div>
-    <div class="finance-summary"><div class="money"><small>Ingresos</small><strong>${money(income)}</strong></div><div class="money expense"><small>Gastos</small><strong>${money(expenses)}</strong></div><div class="money balance"><small>Resultado</small><strong>${money(balance)}</strong></div></div>
-    ${state.movements.length?`<div class="list">${[...state.movements].reverse().map(m=>`<div class="list-item"><div><b>${esc(m.label)}</b><p class="muted">${dateLabel(m.date)} · ${m.type==='income'?'Ingreso':m.type==='reversal'?'Anulación':'Gasto'}</p></div><strong style="color:${m.type==='income'?'var(--pine)':'var(--rust)'}">${m.type==='income'?'+':'−'} ${money(m.amount)}</strong></div>`).join('')}</div>`:empty('$','Todavía no hay movimientos','El primer ingreso aparecerá cuando confirmes una reserva o lo cargues manualmente.')}
+    <div class="finance-summary"><div class="money"><small>Ingresos</small><strong>${amountPair(inc)}</strong></div><div class="money expense"><small>Gastos</small><strong>${amountPair(exp)}</strong></div><div class="money balance"><small>Resultado</small><strong>${amountPair({ARS:inc.ARS-exp.ARS,USD:inc.USD-exp.USD})}</strong></div></div>
+    ${state.movements.length?`<div class="list">${[...state.movements].reverse().map(m=>`<div class="list-item"><div><b>${esc(m.label)}</b><p class="muted">${dateLabel(m.date)} · ${m.type==='income'?'Ingreso':m.type==='reversal'?'Anulación':'Gasto'}</p></div><strong style="color:${m.type==='income'?'var(--pine)':'var(--rust)'}">${m.type==='income'?'+':'−'} ${money(m.amount, m.currency)}</strong></div>`).join('')}</div>`:empty('$','Todavía no hay movimientos','El primer ingreso aparecerá cuando confirmes una reserva o lo cargues manualmente.')}
   </section>`;
+}
+function incomeByCurrency() {
+  return state.movements.reduce((acc,m) => { const c = m.currency === 'USD' ? 'USD' : 'ARS'; acc[c] += m.type==='income' ? Number(m.amount) : m.type==='reversal' ? -Number(m.amount) : 0; return acc; }, { ARS: 0, USD: 0 });
+}
+function expensesByCurrency() {
+  return state.movements.filter(m=>m.type==='expense').reduce((acc,m) => { acc[m.currency === 'USD' ? 'USD' : 'ARS'] += Number(m.amount); return acc; }, { ARS: 0, USD: 0 });
+}
+function amountPair(pair) {
+  const parts = [];
+  if (pair.ARS || !pair.USD) parts.push(money(pair.ARS));
+  if (pair.USD) parts.push(`<span class="usd-amount">${money(pair.USD,'USD')}</span>`);
+  return parts.join('<br>');
 }
 function sumMovements(type) {
   if (type === 'income') return state.movements.reduce((sum,m) => sum + (m.type==='income'?Number(m.amount):m.type==='reversal'?-Number(m.amount):0), 0);
@@ -682,8 +724,13 @@ function renderConnections() {
       <p class="muted">Una vez publicada gratuitamente en una dirección HTTPS, podrás instalarla desde Safari o Chrome. Los datos seguirán siendo privados en cada dispositivo.</p>
       <button class="primary-button" data-action="installApp" ${!installPrompt?'disabled':''}>${installPrompt?'Instalar ahora':'Disponible después de publicar'}</button>
       <hr class="soft-rule">
-      <h3>Mover datos entre dispositivos</h3><p class="muted">Mientras no usemos una base online, esta copia es la forma gratuita y privada de pasar reservas de la computadora al celular.</p>
-      <div class="row-actions" style="justify-content:flex-start"><button data-action="exportBackup">Guardar copia</button><button data-action="importBackup">Cargar copia</button></div>
+      ${Cloud.panel()}
+      <hr class="soft-rule">
+      <h3>Historial automático</h3><p class="muted">La app guarda sola una foto de tus datos cada vez que trabajás. Si algo se borra, volvé a una versión anterior.</p>
+      <div id="snapshot-list" class="snapshot-list"><p class="muted">Cargando historial…</p></div>
+      <hr class="soft-rule">
+      <h3>Copia manual</h3><p class="muted">Un archivo con todos tus datos, por si querés guardarlo vos.</p>
+      <div class="row-actions" style="justify-content:flex-start"><button data-action="exportBackup">Descargar copia</button><button data-action="importBackup">Cargar copia</button></div>
       <input type="file" id="backup-file" accept="application/json,.json" hidden>
     </div>
   </section>
@@ -788,7 +835,7 @@ function importBackup(event) {
   const file = event.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    try { state = { ...defaultState, ...JSON.parse(reader.result) }; saveState('Datos restaurados'); render(); }
+    try { Memory.snapshot(state, 'Antes de cargar una copia'); state = normalizeState(JSON.parse(reader.result)); saveState('Datos restaurados'); render(); }
     catch { toast('La copia no es válida'); }
   };
   reader.readAsText(file);
@@ -802,7 +849,7 @@ function registerServiceWorker() {
 
 function openLeadModal() {
   openModal('Nueva consulta', `<form id="lead-form"><div class="form-grid">
-    ${field('Nombre','name','text','Nombre de la persona',true)}${selectField('Canal','channel',['WhatsApp','Facebook','Instagram','Airbnb'])}
+    ${field('Nombre','name','text','Nombre de la persona',true)}${selectField('Canal','channel',CHANNELS,null,'WhatsApp')}
     ${field('Teléfono','phone','tel','358…')}${field('Cantidad de personas','guests','number','Hasta 5',true,'1','5')}
     ${field('Ingreso','checkin','date','',true)}${field('Salida','checkout','date','',true)}
     ${field('Precio por noche','nightly','number','La app lo sugiere')}${selectField('Estado','status',['nueva','presupuesto'],['Nueva','Presupuesto enviado'])}
@@ -826,29 +873,47 @@ function openReservationModal(lead=null, existing=null) {
   openModal(existing ? 'Editar reserva' : lead ? 'Confirmar reserva con seña' : 'Cargar reserva confirmada', `<form id="reservation-form"><div class="form-grid">
     ${field('Titular de la reserva','guest','text','Nombre y apellido',true,undefined,undefined,existing?.guest||lead?.name||'')}${field('Teléfono','phone','tel','358…',false,undefined,undefined,source.phone||'')}
     ${field('Ingreso','checkin','date','',true,undefined,undefined,source.checkin||'')}${field('Salida','checkout','date','',true,undefined,undefined,source.checkout||'')}
-    ${field('Cantidad de personas','guests','number','Máximo 5',true,'1','5',source.guests||'')}${selectField('Origen','channel',['WhatsApp','Facebook','Instagram','Airbnb','Calendario importado'],null,source.channel||'WhatsApp')}
-    ${field('Precio total acordado','total','number','Importe total',true,undefined,undefined,existing?.total||suggestedTotal)}${field('Seña recibida','paid','number','50% del total',true,undefined,undefined,existing?.paid||'')}
+    ${field('Cantidad de personas','guests','number','Máximo 5',true,'1','5',source.guests||'')}${selectField('Origen','channel',CHANNELS,null,source.channel||'Booking.com')}
+    <label class="field booking-only"><span>N° de reserva de Booking</span><input name="bookingRef" type="text" placeholder="Ej.: 6634934028" value="${esc(existing?.bookingRef||'')}"></label>
+    ${selectField('Moneda','currency',['USD','ARS'],['Dólares (US$)','Pesos ($)'],existing ? rCur(existing) : 'USD')}
+    <label class="field"><span>Precio total acordado</span><input name="total" type="number" step="any" min="0" placeholder="Importe total" required value="${esc(existing?.total ?? suggestedTotal)}"></label>
+    <label class="field"><span>Seña / pago recibido</span><input name="paid" type="number" step="any" min="0" placeholder="0 si se cobra todo al ingresar" value="${esc(existing?.paid ?? '')}"></label>
+    <label class="field usd-only"><span>Tipo de cambio (opcional)</span><input name="exchangeRate" type="number" step="any" min="0" placeholder="Ej.: 1522,73" value="${esc(existing?.exchangeRate||'')}"></label>
+    <label class="field usd-only"><span>Equivalente en pesos (opcional)</span><input name="arsEquivalent" type="number" step="any" min="0" placeholder="Ej.: 201000" value="${esc(existing?.arsEquivalent||'')}"></label>
     ${field('Depósito de garantía','guarantee','number','Opcional, lo definís vos',false,undefined,undefined,existing?.guarantee||'')}${field('Patente','plate','text','Opcional',false,undefined,undefined,existing?.plate||'')}
     ${field('DNI del titular','guestDni','text','Dato opcional',false,undefined,undefined,existing?.guestDni||'')}${field('Fecha de nacimiento','birthdate','date','',false,undefined,undefined,existing?.birthdate||'')}
     ${field('Contacto de emergencia','emergencyPhone','tel','Dato opcional',false,undefined,undefined,existing?.emergencyPhone||'')}${field('Correo electrónico','email','email','Dato opcional',false,undefined,undefined,existing?.email||'')}
     ${field('Ciudad y domicilio','address','text','Dato opcional',false,undefined,undefined,existing?.address||'')}${field('Acompañantes','companions','text','Nombres separados por coma',false,undefined,undefined,existing?.companions||'')}
     ${textareaField('Notas','notes','Datos importantes de la estadía',existing?.notes||'')}
-    ${existing?'':'<label class="checkline field full"><input type="checkbox" name="depositConfirmed" required> Confirmo que recibí la seña y que estas fechas deben bloquearse.</label>'}
+    ${existing?'':'<label class="checkline field full"><input type="checkbox" name="depositConfirmed" required> Confirmo la reserva y que estas fechas deben bloquearse.</label>'}
   </div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">${existing?'Guardar cambios':'Confirmar reserva'}</button></div></form>`);
   const form=document.querySelector('#reservation-form');
-  form.elements.total.addEventListener('change', () => {
-    if (!form.elements.paid.value) form.elements.paid.value = Math.round(Number(form.elements.total.value || 0) * .5);
-  });
-  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout,existing?.id)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout);
+  const syncFormVisibility = () => {
+    form.classList.toggle('is-usd', form.elements.currency.value === 'USD');
+    form.classList.toggle('is-booking', form.elements.channel.value === 'Booking.com');
+  };
+  form.elements.currency.addEventListener('change', syncFormVisibility);
+  form.elements.channel.addEventListener('change', syncFormVisibility);
+  syncFormVisibility();
+  const linkRate = source => {
+    const total = Number(form.elements.total.value || 0), rate = Number(form.elements.exchangeRate.value || 0), ars = Number(form.elements.arsEquivalent.value || 0);
+    if (source === 'ars' && total && ars) form.elements.exchangeRate.value = Math.round(ars / total * 100) / 100;
+    if (source !== 'ars' && total && rate) form.elements.arsEquivalent.value = Math.round(total * rate);
+  };
+  form.elements.arsEquivalent.addEventListener('input', () => linkRate('ars'));
+  form.elements.exchangeRate.addEventListener('input', () => linkRate('rate'));
+  form.elements.total.addEventListener('input', () => linkRate('total'));
+  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout,existing?.id)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid||0); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout); data.currency=data.currency==='USD'?'USD':'ARS'; data.exchangeRate=data.currency==='USD'?Number(data.exchangeRate||0):0; data.arsEquivalent=data.currency==='USD'?Number(data.arsEquivalent||0):0; if(data.channel!=='Booking.com') data.bookingRef=''; delete data.depositConfirmed;
+    if(data.paid>data.total) return toast('El pago recibido no puede superar el total');
     if(existing){
       const oldPaid=Number(existing.paid||0), delta=data.paid-oldPaid;
       Object.assign(existing,data,{id:existing.id,receipt:existing.receipt,created:existing.created,status:existing.status});
-      if(delta>0)state.movements.push({id:uid(),type:'income',label:`Ajuste de pago · ${data.guest}`,amount:delta,date:todayISO(),reservationId:existing.id});
-      if(delta<0)state.movements.push({id:uid(),type:'reversal',label:`Ajuste de pago · ${data.guest}`,amount:Math.abs(delta),date:todayISO(),reservationId:existing.id});
-      tasksForReservation(existing.id).forEach(task=>task.due=data.checkin);
-      saveState('Reserva actualizada'); closeModal(); navigate('calendario'); return;
+      state.movements.filter(m=>m.reservationId===existing.id).forEach(m=>{ m.currency=data.currency; });
+      if(delta>0)state.movements.push({id:uid(),type:'income',label:`Ajuste de pago · ${data.guest}`,amount:delta,currency:data.currency,date:todayISO(),reservationId:existing.id});
+      if(delta<0)state.movements.push({id:uid(),type:'reversal',label:`Ajuste de pago · ${data.guest}`,amount:Math.abs(delta),currency:data.currency,date:todayISO(),reservationId:existing.id});
+      saveState('Reserva actualizada'); closeModal(); render(); return;
     }
-    data.id=uid(); data.receipt=nextReceipt(); data.created=todayISO(); data.status='confirmed'; state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,date:todayISO(),reservationId:data.id}); createReservationTasks(data); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada y tareas creadas'); closeModal(); navigate('calendario'); });
+    data.id=uid(); data.receipt=nextReceipt(); data.created=todayISO(); data.status='confirmed'; state.reservations.push(data); if(data.paid>0) state.movements.push({id:uid(),type:'income',label:`Seña · ${data.guest}`,amount:data.paid,currency:data.currency,date:todayISO(),reservationId:data.id}); if(lead){ const original=state.leads.find(x=>x.id===lead.id); if(original) original.status='convertida'; } saveState('Reserva confirmada'); closeModal(); navigate('calendario'); });
   bindModal();
 }
 
@@ -860,7 +925,7 @@ function openTaskModal() {
   openModal('Nueva tarea', `<form id="task-form"><div class="form-grid">${field('Tarea','title','text','Qué hay que hacer',true)}${selectField('Categoría','category',['Exterior','Limpieza interior','Cocina y vajilla','Camas','Bienvenida','Mantenimiento'])}${field('Fecha','due','date')}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar tarea</button></div></form>`); const form=document.querySelector('#task-form');form.addEventListener('submit',e=>{e.preventDefault();state.tasks.push({...Object.fromEntries(new FormData(form)),id:uid(),done:false});saveState('Tarea creada');closeModal();render();});bindModal();
 }
 function openMovementModal() {
-  openModal('Registrar movimiento', `<form id="movement-form"><div class="form-grid">${selectField('Tipo','type',['income','expense'],['Ingreso','Gasto'])}${field('Concepto','label','text','Ej.: Seña reserva',true)}${field('Importe','amount','number','0',true)}${field('Fecha','date','date','',true,undefined,undefined,todayISO())}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar</button></div></form>`);const form=document.querySelector('#movement-form');form.addEventListener('submit',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form));d.id=uid();d.amount=Number(d.amount);state.movements.push(d);saveState('Movimiento registrado');closeModal();render();});bindModal();
+  openModal('Registrar movimiento', `<form id="movement-form"><div class="form-grid">${selectField('Tipo','type',['income','expense'],['Ingreso','Gasto'])}${field('Concepto','label','text','Ej.: Seña reserva',true)}${field('Importe','amount','number','0',true)}${field('Fecha','date','date','',true,undefined,undefined,todayISO())}${selectField('Moneda','currency',['ARS','USD'],['Pesos ($)','Dólares (US$)'])}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Guardar</button></div></form>`);const form=document.querySelector('#movement-form');form.addEventListener('submit',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form));d.id=uid();d.amount=Number(d.amount);state.movements.push(d);saveState('Movimiento registrado');closeModal();render();});bindModal();
 }
 function openInventoryModal() {
   openModal('Agregar al inventario', `<form id="inventory-form"><div class="form-grid">${field('Elemento','name','text','Ej.: Copas',true)}${field('Detalle','detail','text','Qué controlar')}${selectField('Estado','status',['hay','poco','falta'],['Hay','Queda poco','Falta'])}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Agregar</button></div></form>`);const form=document.querySelector('#inventory-form');form.addEventListener('submit',e=>{e.preventDefault();state.inventory.push({...Object.fromEntries(new FormData(form)),id:uid()});saveState('Elemento agregado');closeModal();render();});bindModal();
@@ -868,29 +933,24 @@ function openInventoryModal() {
 
 function openReservationDetails(id) {
   const r=state.reservations.find(x=>x.id===id); if(!r)return; const cancelled=r.status==='cancelled'; const balance=cancelled?0:Number(r.total)-Number(r.paid||0);
-  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total original ${money(r.total)}<br>Ingreso vigente ${money(cancelled?0:r.paid)}<br><b>Saldo ${money(balance)}</b></p></div><div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button><button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
-  bindModal(); const print=document.querySelector('#print-receipt');if(print)print.addEventListener('click',()=>printReceipt(r)); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
+  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total, rCur(r))}${r.arsEquivalent?` <small class="muted">(≈ ${money(r.arsEquivalent)})</small>`:''}<br>Pagado ${money(cancelled?0:r.paid, rCur(r))}<br><b>Saldo ${money(balance, rCur(r))}</b></p></div>${r.bookingRef?`<div class="field full"><span class="eyebrow">BOOKING.COM</span><p>Reserva N° ${esc(r.bookingRef)}</p></div>`:''}${r.notes?`<div class="field full"><span class="eyebrow">NOTAS</span><p>${esc(r.notes)}</p></div>`:''}<div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button><button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
+  bindModal(); const print=document.querySelector('#print-receipt');if(print)print.addEventListener('click',()=>printReceipt(r)); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,currency:rCur(r),date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
 }
 
 function openModal(title, body) {
-  document.querySelector('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><header class="modal-header"><h2>${title}</h2><button class="icon-button" data-close aria-label="Cerrar">×</button></header><div class="modal-body">${body}</div></section></div>`;
+  const root = document.querySelector('#modal-root');
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><header class="modal-header"><h2>${title}</h2><button class="icon-button" data-close aria-label="Cerrar">×</button></header><div class="modal-body">${body}</div></section></div>`;
+  document.body.classList.add('modal-open');
+  root.querySelector('.modal-backdrop').addEventListener('mousedown', event => { if (event.target.classList.contains('modal-backdrop')) closeModal(); });
+  setTimeout(() => root.querySelector('.modal input:not([type=hidden]):not([type=checkbox]), .modal select, .modal textarea')?.focus({ preventScroll: true }), 60);
 }
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.querySelector('#modal-root .modal')) closeModal(); });
 function bindModal(){document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));document.querySelectorAll('#modal-root [data-action]').forEach(b=>b.addEventListener('click',()=>handleAction(b.dataset.action,b.dataset.id)));}
-function closeModal(){document.querySelector('#modal-root').innerHTML='';}
+function closeModal(){document.querySelector('#modal-root').innerHTML='';document.body.classList.remove('modal-open');}
 function field(label,name,type='text',placeholder='',required=false,min,max,value=''){return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" placeholder="${placeholder}" ${required?'required':''} ${min?`min="${min}"`:''} ${max?`max="${max}"`:''} value="${esc(value)}"></label>`;}
 function textareaField(label,name,placeholder='',value=''){return `<label class="field full"><span>${label}</span><textarea name="${name}" placeholder="${placeholder}">${esc(value)}</textarea></label>`;}
 function selectField(label,name,values,labels=null,selected=''){return `<label class="field"><span>${label}</span><select name="${name}">${values.map((v,i)=>`<option value="${v}" ${v===selected?'selected':''}>${labels?labels[i]:v}</option>`).join('')}</select></label>`;}
 
-function createReservationTasks(r) {
-  const checklist={
-    'Exterior':['Cortar el césped','Barrer la galería grande','Ordenar el jardín y el ingreso'],
-    'Limpieza interior':['Limpiar los vidrios','Barrer el interior','Pasar el trapo y encerar el piso','Limpiar el polvo de todos los muebles'],
-    'Cocina y vajilla':['Revisar y dejar limpia toda la vajilla','Controlar garrafa y cocina','Limpiar heladera y microondas'],
-    'Camas':['Airear los colchones','Preparar las camas con acolchados y almohadas'],
-    'Bienvenida':['Colocar el mantel tejido de bienvenida','Preparar cartelería, manual y normas','Colocar desodorante de ambientes','Confirmar entrega personal de llaves']
-  };
-  Object.entries(checklist).forEach(([category,titles])=>titles.forEach(title=>state.tasks.push({id:uid(),title,category,due:r.checkin,done:false,reservationId:r.id})));
-}
 function tasksForReservation(id){return state.tasks.filter(t=>t.reservationId===id);}
 function activeReservations(){return state.reservations.filter(r=>r.status!=='cancelled');}
 function cancelledReservations(){return state.reservations.filter(r=>r.status==='cancelled');}
@@ -902,14 +962,14 @@ function deleteLead(id){state.leads=state.leads.filter(x=>x.id!==id);saveState('
 function openCancelReservationModal(id){
   const reservation=state.reservations.find(r=>r.id===id);if(!reservation)return;
   const amount=reservationNetIncome(id);
-  openModal('Cancelar reserva',`<div class="cancel-summary"><span class="cancel-icon">!</span><div><h3>${esc(reservation.guest)}</h3><p>${dateLabel(reservation.checkin)} → ${dateLabel(reservation.checkout)}</p></div></div><div class="quote-box"><b>Al confirmar:</b><p>Se liberarán las fechas, se eliminarán las tareas pendientes y se anularán ${money(amount)} de los ingresos registrados. La reserva quedará visible en el historial.</p></div><div class="form-actions"><button class="ghost-button" data-close>Volver</button><button class="primary-button danger-solid" id="confirm-cancel-reservation">Sí, cancelar reserva</button></div>`);
+  openModal('Cancelar reserva',`<div class="cancel-summary"><span class="cancel-icon">!</span><div><h3>${esc(reservation.guest)}</h3><p>${dateLabel(reservation.checkin)} → ${dateLabel(reservation.checkout)}</p></div></div><div class="quote-box"><b>Al confirmar:</b><p>Se liberarán las fechas y se anularán ${money(amount, rCur(reservation))} de los ingresos registrados. La reserva quedará visible en el historial.</p></div><div class="form-actions"><button class="ghost-button" data-close>Volver</button><button class="primary-button danger-solid" id="confirm-cancel-reservation">Sí, cancelar reserva</button></div>`);
   bindModal();document.querySelector('#confirm-cancel-reservation').addEventListener('click',()=>cancelReservation(id));
 }
 
 function cancelReservation(id){
   const reservation=state.reservations.find(r=>r.id===id);if(!reservation||reservation.status==='cancelled')return;
   const amount=reservationNetIncome(id);
-  if(amount>0)state.movements.push({id:uid(),type:'reversal',label:`Anulación · ${reservation.guest}`,amount,date:todayISO(),reservationId:id});
+  if(amount>0)state.movements.push({id:uid(),type:'reversal',label:`Anulación · ${reservation.guest}`,amount,currency:rCur(reservation),date:todayISO(),reservationId:id});
   reservation.status='cancelled';reservation.cancelledAt=new Date().toISOString();reservation.paid=0;
   state.tasks=state.tasks.filter(task=>task.reservationId!==id);
   saveState('Reserva cancelada: fechas e ingresos liberados');closeModal();navigate('calendario');
@@ -1039,8 +1099,57 @@ function assistantReply(text){
 }
 
 function printReceipt(r){
-  const w=window.open('','_blank');const balance=Number(r.total)-Number(r.paid||0);w.document.write(`<!doctype html><html><head><title>Comprobante ${r.receipt}</title><style>body{font-family:Arial;max-width:700px;margin:50px auto;color:#24372b}.head{display:flex;justify-content:space-between;border-bottom:2px solid #244f3a;padding-bottom:20px}.tag{color:#777}.box{margin:25px 0;padding:20px;background:#f5f3ec;border-radius:12px}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd}.total{font-size:22px;font-weight:bold}.note{margin-top:40px;font-size:12px;color:#777}</style></head><body><div class="head"><div><h1>Villa il Fanale</h1><div>Loft serrano · Alpa Corral</div></div><div><b>${r.receipt}</b><br><span class="tag">Comprobante no fiscal</span></div></div><div class="box"><b>Responsable del alojamiento</b><p>${state.settings.owner}<br>DNI ${state.settings.dni}<br>Tel. ${state.settings.phone}</p></div><h2>Reserva de ${esc(r.guest)}</h2><p>${dateLabel(r.checkin)} al ${dateLabel(r.checkout)} · ${r.nights} noches · ${r.guests} huéspedes</p><div class="row"><span>Valor total</span><b>${money(r.total)}</b></div><div class="row"><span>Seña / importe abonado</span><b>${money(r.paid)}</b></div><div class="row total"><span>Saldo al ingresar</span><b>${money(balance)}</b></div><p class="note">La reserva se confirma con la seña. En caso de cancelación, la seña no es reembolsable. Este documento es un comprobante interno y no constituye factura.</p><script>window.print()<\/script></body></html>`);w.document.close();}
-
+  const cur = rCur(r); const balance = Number(r.total) - Number(r.paid || 0);
+  const nightly = r.nights ? Number(r.total) / r.nights : Number(r.total);
+  const longDate = v => new Intl.DateTimeFormat('es-AR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(`${v}T12:00:00`));
+  const nightsRows = datesBetween(r.checkin, r.checkout).map(d => `<tr><td>Noche del ${dateLabel(d)} al ${dateLabel(plusDay(d))}</td><td class="num">${money(nightly, cur)}</td></tr>`).join('');
+  const rate = r.exchangeRate || (r.arsEquivalent && r.total ? r.arsEquivalent / r.total : 0);
+  const owner = state.settings.owner || 'Villa il Fanale';
+  const phone = state.settings.phone || '358 484 9524';
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Comprobante ${esc(r.receipt)} · ${esc(r.guest)}</title>
+<style>
+@page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;font:13px/1.45 Helvetica,Arial,sans-serif;color:#111;-webkit-print-color-adjust:exact}
+.sheet{max-width:720px;margin:28px auto;padding:0 8px}
+.top{text-align:center;padding-bottom:16px;border-bottom:1.5px solid #111}
+.top h1{font:400 30px/1 Georgia,'Times New Roman',serif;letter-spacing:.14em;margin:0}.top p{font:italic 13px Georgia,serif;color:#555;margin:6px 0 0}
+.meta{display:flex;justify-content:space-between;align-items:flex-end;margin:18px 0 6px}.meta h2{font-size:15px;letter-spacing:.06em;margin:0}.meta .r{text-align:right;color:#555;font-size:11.5px}
+.nf{font-style:italic;color:#666;font-size:11px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 18px;margin:20px 0;padding:16px 0;border-top:1px solid #ccc;border-bottom:1px solid #ccc}
+.k{display:block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:3px}.v{font-size:14px;font-weight:600}.s{color:#555;font-size:11.5px}
+table{width:100%;border-collapse:collapse;margin-top:6px}th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#666;text-align:left;padding:6px 0;border-bottom:1px solid #ccc}
+td{padding:9px 0;border-bottom:1px solid #e3e3e3}.num{text-align:right;white-space:nowrap}
+.total{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:12px 16px;border:1.5px solid #111}.total b{font-size:13px;letter-spacing:.06em}.total strong{font-size:22px}
+.lines{margin-top:12px}.lines div{display:flex;justify-content:space-between;padding:4px 0;color:#333}
+.note{margin-top:22px;padding-top:12px;border-top:1px solid #ccc;font-size:11.5px;color:#444}
+.foot{margin-top:40px;text-align:center;font-size:11px;color:#555}.foot i{display:block;font:italic 13px Georgia,serif;color:#111;margin-bottom:14px}
+.print{display:block;margin:20px auto 0;padding:10px 22px;border:1px solid #111;background:#fff;font:600 13px Helvetica,Arial;cursor:pointer}@media print{.print{display:none}.sheet{margin:0}}
+</style></head><body><div class="sheet">
+<div class="top"><h1>VILLA IL FANALE</h1><p>Loft Serrano · Alpa Corral, Córdoba</p></div>
+<div class="meta"><div><h2>COMPROBANTE DE RESERVA</h2><div class="nf">Documento no válido como factura</div></div><div class="r">${r.bookingRef?`Reserva Booking.com N° ${esc(r.bookingRef)}<br>`:''}Comprobante ${esc(r.receipt)}<br>Emitido: ${new Intl.DateTimeFormat('es-AR').format(new Date())}</div></div>
+<div class="grid">
+<div><span class="k">Huésped titular</span><span class="v">${esc(r.guest)}</span>${r.phone?`<div class="s">${esc(r.phone)}</div>`:''}</div>
+<div><span class="k">Huéspedes</span><span class="v">${r.guests} persona${Number(r.guests)===1?'':'s'}</span></div>
+<div><span class="k">Canal</span><span class="v">${esc(r.channel||'Directo')}</span></div>
+<div><span class="k">Check-in</span><span class="v">${longDate(r.checkin)}</span><div class="s">desde las ${esc(state.settings.checkin||'15:00')} hs</div></div>
+<div><span class="k">Check-out</span><span class="v">${longDate(r.checkout)}</span><div class="s">hasta las ${esc(state.settings.checkout||'10:00')} hs</div></div>
+<div><span class="k">Estadía</span><span class="v">${r.nights} noche${r.nights===1?'':'s'}</span><div class="s">Alojamiento completo</div></div>
+</div>
+<table><thead><tr><th>Detalle</th><th class="num">Importe</th></tr></thead><tbody>${nightsRows}</tbody></table>
+<div class="total"><b>TOTAL DE LA ESTADÍA</b><strong>${money(r.total, cur)}</strong></div>
+<div class="lines">
+${Number(r.paid)>0?`<div><span>Pagado a cuenta</span><span>${money(r.paid, cur)}</span></div>`:''}
+<div><span><b>${balance>0?'Saldo a abonar al ingresar':'Saldo'}</b></span><span><b>${money(balance, cur)}</b></span></div>
+${cur==='USD'&&r.arsEquivalent?`<div><span>Equivalente en pesos argentinos${r.channel==='Booking.com'?' (según Booking.com)':''}</span><span>${money(r.arsEquivalent)}</span></div>`:''}
+${cur==='USD'&&rate?`<div class="s"><span>Tipo de cambio de referencia</span><span>US$ 1 = $ ${new Intl.NumberFormat('es-AR',{maximumFractionDigits:2}).format(rate)}</span></div>`:''}
+${Number(r.guarantee)>0?`<div><span>Depósito de garantía (reintegrable al check-out)</span><span>${money(r.guarantee, cur)}</span></div>`:''}
+</div>
+<div class="note">${cur==='USD'?'El pago en el ingreso se realiza al valor del dólar del día. ':''}Gracias por respetar las normas de la casa.</div>
+<div class="foot"><i>¡Gracias por elegirnos! Que disfruten la tranquilidad serrana.</i>${esc(owner)} · ${esc(phone)} · Instagram @villailfanale</div>
+<button class="print" onclick="window.print()">Imprimir</button>
+</div><script>setTimeout(()=>window.print(),350)<\/script></body></html>`;
+  const w=window.open('','_blank'); if(!w) return toast('Permití las ventanas emergentes para ver el comprobante');
+  w.document.write(html); w.document.close();
+}
 async function fetchHolidays(){
   const years=[new Date().getFullYear(),new Date().getFullYear()+1];
   try{const results=await Promise.all(years.map(y=>fetch(`https://api.argentinadatos.com/v1/feriados/${y}`).then(r=>r.ok?r.json():[])));state.holidays=results.flat();saveState();if(route==='calendario')render();}catch{ /* funciona sin conexión; simplemente no destaca feriados */ }
@@ -1051,5 +1160,256 @@ function matchICS(chunk,key){const line=chunk.split(/\r?\n/).find(l=>l.startsWit
 function parseICSDate(value){if(!value)return'';const v=value.slice(0,8);return `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`;}
 
 function toast(message){const root=document.querySelector('#toast-root');root.innerHTML=`<div class="toast">${esc(message)}</div>`;setTimeout(()=>root.innerHTML='',Math.min(8500, Math.max(2800, String(message).length * 55)));}
+
+/* =====================================================================
+   MEMORIA: los datos se guardan en 3 lugares para que no se pierdan.
+   1) El navegador (localStorage), como siempre.
+   2) Una memoria de respaldo del navegador (IndexedDB) con historial.
+   3) La nube: un archivo CIFRADO en la rama "datos" de GitHub, que
+      sólo se puede abrir con tu clave de respaldo. Así los datos
+      viajan entre la compu y el celular y sobreviven si el navegador
+      borra todo.
+   ===================================================================== */
+const Memory = (() => {
+  const DB_NAME = 'villa-il-fanale-memoria', SNAP_LIMIT = 30, SNAP_EVERY_MS = 10 * 60 * 1000;
+  let dbPromise = null, lastSnapAt = 0, mirrorTimer = null;
+  function db() {
+    if (!('indexedDB' in window)) return Promise.resolve(null);
+    dbPromise ??= new Promise(resolve => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('kv');
+        request.result.createObjectStore('snapshots', { keyPath: 'at' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+    return dbPromise;
+  }
+  async function tx(store, mode, fn) {
+    const database = await db(); if (!database) return null;
+    return new Promise(resolve => {
+      try {
+        const t = database.transaction(store, mode); const os = t.objectStore(store); const result = fn(os);
+        t.oncomplete = () => resolve(result?.result ?? true); t.onerror = () => resolve(null);
+      } catch { resolve(null); }
+    });
+  }
+  const clone = value => JSON.parse(JSON.stringify(value));
+  async function init() {
+    try { if (navigator.storage?.persist) await navigator.storage.persist(); } catch {}
+    // Si el navegador borró los datos, los recuperamos de la memoria de respaldo.
+    const mirrored = await tx('kv', 'readonly', os => os.get('state'));
+    const local = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; } })();
+    if (mirrored && (!local || (mirrored.meta?.updatedAt || 0) > (local.meta?.updatedAt || 0))) {
+      state = normalizeState(mirrored);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+      if (!local) setTimeout(() => toast('Recuperé tus datos de la memoria de respaldo'), 600);
+    }
+    const snaps = await list();
+    lastSnapAt = snaps[0]?.at || 0;
+  }
+  function mirror(value) {
+    clearTimeout(mirrorTimer);
+    const copy = clone(value);
+    mirrorTimer = setTimeout(() => tx('kv', 'readwrite', os => os.put(copy, 'state')), 150);
+  }
+  function summary(value) {
+    const r = (value.reservations || []).filter(x => x.status !== 'cancelled').length;
+    return `${r} reserva${r===1?'':'s'} · ${(value.leads||[]).length} consulta${(value.leads||[]).length===1?'':'s'}`;
+  }
+  async function snapshot(value, reason = 'Guardado automático') {
+    lastSnapAt = Date.now();
+    const data = clone(value); delete data.photoLibrary;
+    await tx('snapshots', 'readwrite', os => os.put({ at: lastSnapAt, reason, summary: summary(value), data }));
+    const all = await list();
+    if (all.length > SNAP_LIMIT) await tx('snapshots', 'readwrite', os => all.slice(SNAP_LIMIT).forEach(s => os.delete(s.at)));
+  }
+  function maybeSnapshot(value) { if (Date.now() - lastSnapAt > SNAP_EVERY_MS) snapshot(value); }
+  async function list() {
+    const all = await tx('snapshots', 'readonly', os => os.getAll()) || [];
+    return all.sort((a, b) => b.at - a.at);
+  }
+  async function renderList() {
+    const root = document.querySelector('#snapshot-list'); if (!root) return;
+    const all = await list();
+    if (!all.length) { root.innerHTML = '<p class="muted">Todavía no hay versiones guardadas. Se crean solas mientras usás la app.</p>'; return; }
+    const fmt = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    root.innerHTML = all.slice(0, 8).map(s => `<div class="snapshot-row"><div><b>${fmt.format(new Date(s.at))}</b><small>${esc(s.reason)} · ${esc(s.summary)}</small></div><button class="ghost-button" data-snapshot="${s.at}">Volver a esta versión</button></div>`).join('');
+    root.querySelectorAll('[data-snapshot]').forEach(button => button.addEventListener('click', () => restore(Number(button.dataset.snapshot))));
+  }
+  async function restore(at) {
+    const snap = (await list()).find(s => s.at === at); if (!snap) return;
+    const fmt = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    openModal('Volver a una versión anterior', `<p>Vas a recuperar tus datos tal como estaban el <b>${fmt.format(new Date(at))}</b> (${esc(snap.summary)}).</p><p class="muted">Antes de hacerlo guardo una copia de cómo está todo ahora, así podés deshacerlo.</p><div class="form-actions"><button class="ghost-button" data-close>Cancelar</button><button class="primary-button" id="confirm-restore">Recuperar esta versión</button></div>`);
+    bindModal();
+    document.querySelector('#confirm-restore').addEventListener('click', async () => {
+      await snapshot(state, 'Antes de recuperar una versión');
+      const photos = state.photoLibrary;
+      state = normalizeState(snap.data); state.photoLibrary = photos || [];
+      saveState('Versión recuperada'); closeModal(); render();
+    });
+  }
+  return { init, mirror, snapshot, maybeSnapshot, list, renderList, restore };
+})();
+
+const Cloud = (() => {
+  const BRANCH = 'datos', PATH = 'estado.enc', PASS_KEY = 'villa-il-fanale-clave-respaldo';
+  let status = 'off', pushTimer = null, busy = false, pendingPush = false, lastSha = null;
+  const token = () => sessionStorage.getItem(ADMIN_SESSION_KEY);
+  const pass = () => { try { return localStorage.getItem(PASS_KEY) || ''; } catch { return ''; } };
+  const available = () => !!token();
+  const enabled = () => available() && !!pass();
+  const endpoint = () => `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${PATH}`;
+  const b64 = bytes => bytesToBase64(bytes);
+  const unb64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+
+  async function key(secret, salt) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function encrypt(value, secret) {
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = { ...value }; delete data.photoLibrary;
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await key(secret, salt), new TextEncoder().encode(JSON.stringify(data)));
+    return JSON.stringify({ v: 1, updatedAt: value.meta?.updatedAt || Date.now(), salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(cipher)) });
+  }
+  async function decrypt(file, secret) {
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, await key(secret, unb64(file.salt)), unb64(file.data));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+  async function readRemote() {
+    const headers = githubHeaders(token());
+    const info = await fetchWithTimeout(`${endpoint()}?ref=${BRANCH}&_=${Date.now()}`, { headers, cache: 'no-store' }, GITHUB_READ_TIMEOUT_MS);
+    if (info.status === 404) { lastSha = null; return null; }
+    if (!info.ok) throw new Error(await githubErrorMessage(info, 'No se pudo leer la copia en la nube.'));
+    const meta = await info.json(); lastSha = meta.sha;
+    let text;
+    if (meta.content) text = new TextDecoder().decode(unb64(meta.content.replace(/\s/g, '')));
+    else {
+      const raw = await fetchWithTimeout(`${endpoint()}?ref=${BRANCH}`, { headers: { ...headers, Accept: 'application/vnd.github.raw' }, cache: 'no-store' }, GITHUB_READ_TIMEOUT_MS);
+      text = await raw.text();
+    }
+    return JSON.parse(text);
+  }
+  async function writeRemote(secret) {
+    const body = { message: `Respaldo de datos ${new Date().toISOString()}`, content: textToBase64(await encrypt(state, secret)), branch: BRANCH, ...(lastSha ? { sha: lastSha } : {}) };
+    const response = await fetchWithTimeout(endpoint(), { method: 'PUT', headers: { ...githubHeaders(token()), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, GITHUB_WRITE_TIMEOUT_MS);
+    if (response.status === 409 || response.status === 422) { await readRemote(); return writeRemote(secret); }
+    if (!response.ok) throw new Error(await githubErrorMessage(response, 'No se pudo guardar la copia en la nube.'));
+    lastSha = (await response.json()).content?.sha || null;
+  }
+  function setStatus(next) { status = next; renderStatus(); }
+  function renderStatus() {
+    const el = document.querySelector('#sync-status'); if (!el) return;
+    const map = {
+      off: ['local', 'Guardado en este dispositivo', available() ? 'Activá la nube' : ''],
+      saving: ['saving', 'Guardando en la nube…', ''],
+      saved: ['ok', 'Guardado en la nube', ''],
+      error: ['err', 'Sin conexión con la nube', 'Reintentar']
+    }[status] || ['local', 'Guardado', ''];
+    el.className = `sync-status ${map[0]}`; el.innerHTML = `<span class="sync-dot"></span><span class="sync-text">${map[1]}</span>`;
+    el.title = map[2] || map[1];
+  }
+  function schedulePush() {
+    if (!enabled()) return setStatus('off');
+    setStatus('saving');
+    clearTimeout(pushTimer); pushTimer = setTimeout(push, 2200);
+  }
+  async function push() {
+    if (!enabled()) return;
+    if (busy) { pendingPush = true; return; }
+    busy = true;
+    try { await writeRemote(pass()); setStatus('saved'); }
+    catch (error) { console.warn(error); setStatus('error'); }
+    finally { busy = false; if (pendingPush) { pendingPush = false; push(); } }
+  }
+  async function syncNow(manual = false) {
+    if (!enabled()) { if (manual) openSetup(); return; }
+    setStatus('saving');
+    try {
+      const remote = await readRemote();
+      if (remote && (remote.updatedAt || 0) > (state.meta?.updatedAt || 0)) {
+        const data = await decrypt(remote, pass());
+        await Memory.snapshot(state, 'Antes de traer datos de la nube');
+        const photos = state.photoLibrary;
+        state = normalizeState(data); state.photoLibrary = photos || [];
+        saveState(manual ? 'Datos actualizados desde la nube' : '', { keepTimestamp: true, skipCloud: true });
+        render(); setStatus('saved');
+        if (!manual) toast('Traje tus últimos cambios desde la nube');
+      } else if (!remote || (remote.updatedAt || 0) < (state.meta?.updatedAt || 0)) {
+        await writeRemote(pass()); setStatus('saved'); if (manual) toast('Copia en la nube actualizada');
+      } else { setStatus('saved'); if (manual) toast('Todo está sincronizado'); }
+    } catch (error) {
+      console.warn(error);
+      if (error?.name === 'OperationError') { setStatus('error'); toast('La clave de respaldo no coincide con la copia en la nube'); }
+      else { setStatus('error'); if (manual) toast(error.message || 'No se pudo sincronizar'); }
+    }
+  }
+  function start() {
+    renderStatus();
+    document.querySelector('#sync-status')?.addEventListener('click', () => enabled() ? syncNow(true) : (available() ? openSetup() : null));
+    if (enabled()) syncNow(false);
+    window.addEventListener('online', () => enabled() && syncNow(false));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && enabled() && !busy) syncNow(false); });
+  }
+  async function openSetup() {
+    if (!available()) return toast('La nube se activa cuando entrás con tu clave de GitHub');
+    let exists = false;
+    try { exists = !!(await readRemote()); } catch {}
+    openModal(exists ? 'Conectar este dispositivo' : 'Activar memoria en la nube', `<form id="cloud-form">
+      <p>${exists ? 'Ya tenés una copia en la nube. Escribí tu <b>clave de respaldo</b> para traer tus datos a este dispositivo.' : 'Elegí una <b>clave de respaldo</b>. Tus datos se guardan cifrados en GitHub y sólo se pueden abrir con esta clave. Así no se pierden y aparecen en la compu y en el celular.'}</p>
+      <div class="form-grid">
+        <label class="field full"><span>Clave de respaldo</span><input name="pass" type="password" minlength="8" required autocomplete="new-password" placeholder="Mínimo 8 caracteres"></label>
+        ${exists ? '' : '<label class="field full"><span>Repetir clave</span><input name="pass2" type="password" minlength="8" required autocomplete="new-password"></label>'}
+      </div>
+      <div class="quote-box"><b>Importante:</b><p style="margin:5px 0 0">Anotá esta clave en un lugar seguro. Si la olvidás, la copia en la nube no se puede abrir (los datos de este dispositivo siguen estando).</p></div>
+      <div class="form-error-admin" id="cloud-error" hidden></div>
+      <div class="form-actions"><button type="button" class="ghost-button" data-close>Ahora no</button><button class="primary-button">${exists ? 'Conectar' : 'Activar'}</button></div></form>`);
+    bindModal();
+    const form = document.querySelector('#cloud-form');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const errorBox = document.querySelector('#cloud-error'); const button = form.querySelector('.primary-button');
+      const secret = form.elements.pass.value;
+      if (!exists && secret !== form.elements.pass2.value) { errorBox.textContent = 'Las claves no coinciden.'; errorBox.hidden = false; return; }
+      button.disabled = true; button.textContent = 'Comprobando…';
+      try {
+        const remote = await readRemote();
+        if (remote) {
+          const data = await decrypt(remote, secret);
+          localStorage.setItem(PASS_KEY, secret);
+          if ((remote.updatedAt || 0) > (state.meta?.updatedAt || 0)) {
+            await Memory.snapshot(state, 'Antes de conectar con la nube');
+            const photos = state.photoLibrary; state = normalizeState(data); state.photoLibrary = photos || [];
+            saveState('', { keepTimestamp: true, skipCloud: true });
+          } else await writeRemote(secret);
+        } else {
+          localStorage.setItem(PASS_KEY, secret);
+          await writeRemote(secret);
+        }
+        setStatus('saved'); closeModal(); render(); toast('Memoria en la nube activada ✓');
+      } catch (error) {
+        button.disabled = false; button.textContent = exists ? 'Conectar' : 'Activar';
+        errorBox.textContent = error?.name === 'OperationError' ? 'Esa no es la clave de respaldo de tu copia.' : (error.message || 'No se pudo conectar con GitHub.');
+        errorBox.hidden = false;
+      }
+    });
+  }
+  function forgetDevice() {
+    try { localStorage.removeItem(PASS_KEY); } catch {}
+    setStatus('off'); render(); toast('Este dispositivo dejó de sincronizar. Tus datos siguen acá.');
+  }
+  function banner() {
+    if (enabled() || !available()) return '';
+    return `<section class="cloud-banner"><div><b>Que no se te borre nada</b><p>Activá la memoria en la nube: tus reservas quedan guardadas cifradas y aparecen en todos tus dispositivos.</p></div><button class="primary-button" data-action="cloudSetup">Activar ahora</button></section>`;
+  }
+  function panel() {
+    if (!available()) return `<h3>Memoria en la nube</h3><p class="muted">Disponible cuando entrás a la app con tu clave de GitHub.</p>`;
+    if (!enabled()) return `<h3>Memoria en la nube</h3><p class="muted">Guardá tus datos cifrados en GitHub para que no se pierdan y se vean en la compu y el celular.</p><div class="row-actions" style="justify-content:flex-start"><button class="primary-button" data-action="cloudSetup">Activar</button></div>`;
+    return `<h3>Memoria en la nube <span class="pill"><span class="dot"></span>Activa</span></h3><p class="muted">Cada cambio se guarda solo, cifrado con tu clave de respaldo.</p><div class="row-actions" style="justify-content:flex-start"><button data-action="cloudSyncNow">Sincronizar ahora</button><button class="ghost-button" data-action="cloudForget">Desconectar este dispositivo</button></div>`;
+  }
+  return { start, schedulePush, syncNow, openSetup, forgetDevice, banner, panel, renderStatus };
+})();
 
 init();

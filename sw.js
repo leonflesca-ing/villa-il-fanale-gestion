@@ -1,7 +1,7 @@
-const CACHE = 'villa-il-fanale-v15';
+const CACHE = 'villa-il-fanale-v16';
 const CORE = [
   './', './index.html', './styles.css', './app.js', './manifest.json',
-  './assets/icon-192.png', './assets/icon-512.png', './assets/farol.png',
+  './assets/icon-192.png', './assets/icon-512.png', './assets/farol.png', './assets/farol-claro.png', './assets/farol-verde.png',
   './assets/jardin-entrada.png', './assets/logo-completo.png',
   './reservar/', './reservar/index.html', './reservar/public.css', './reservar/public.js'
 ];
@@ -23,6 +23,14 @@ self.addEventListener('fetch', event => {
   const dynamicPublicFile = url.pathname.includes('/assets/pagina-') || url.pathname.endsWith('/reservar/content.json') || url.pathname.endsWith('/reservar/config.js');
   if (dynamicPublicFile) {
     event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
+  const codeFile = /\.(js|css|html)$/.test(url.pathname) || url.pathname.endsWith('/');
+  if (codeFile && event.request.mode !== 'navigate') {
+    event.respondWith(fetch(event.request).then(response => {
+      if (response && response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(event.request, copy)); }
+      return response;
+    }).catch(() => caches.match(event.request)));
     return;
   }
   if (event.request.mode === 'navigate') {

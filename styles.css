@@ -285,3 +285,50 @@ textarea { min-height: 95px; resize: vertical; }
   .app-shell { display:block; }
   #app { padding: 0; }
 }
+
+/* ===== Mejoras v10: fluidez, memoria y moneda ===== */
+:root { --ease: cubic-bezier(.2,.7,.2,1); }
+button { transition: background .2s var(--ease), color .2s, border-color .2s, transform .15s var(--ease), box-shadow .2s; }
+button:active:not(:disabled) { transform: scale(.98); }
+.page-in > * { animation: page-in .38s var(--ease) both; }
+.page-in > *:nth-child(2) { animation-delay: .04s; } .page-in > *:nth-child(3) { animation-delay: .08s; } .page-in > *:nth-child(4) { animation-delay: .12s; }
+@keyframes page-in { from { opacity: 0; transform: translateY(8px); } }
+.modal-backdrop { animation: fade-in .2s ease both; }
+.modal { animation: modal-in .28s var(--ease) both; overscroll-behavior: contain; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+body.modal-open { overflow: hidden; }
+.usd-amount { font-size: .72em; color: var(--muted); font-family: "DM Sans", sans-serif; font-weight: 600; }
+
+/* Formulario de reserva: campos que aparecen según moneda y origen */
+#reservation-form:not(.is-usd) .usd-only, #reservation-form:not(.is-booking) .booking-only { display: none; }
+
+/* Indicador de guardado */
+.sync-status { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 99px; background: var(--paper); color: var(--muted); font: 600 12px "DM Sans", sans-serif; cursor: pointer; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #b9bbb4; }
+.sync-status.ok .sync-dot { background: #3f8a5f; box-shadow: 0 0 0 3px rgba(63,138,95,.16); }
+.sync-status.saving .sync-dot { background: var(--gold); animation: pulse 1s ease-in-out infinite; }
+.sync-status.err .sync-dot { background: var(--rust); }
+.sync-status.err { color: var(--rust); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.cloud-banner { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 22px; padding: 20px 24px; border-radius: var(--radius); background: linear-gradient(120deg, #f4e9d4, #efe3cc); border: 1px solid #e6d5b4; }
+.cloud-banner b { font-size: 16px; color: var(--pine-dark); }
+.cloud-banner p { margin: 4px 0 0; color: #6d5a3a; font-size: 13.5px; }
+.snapshot-list { display: grid; gap: 8px; margin: 10px 0 4px; }
+.snapshot-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.snapshot-row b { display: block; font-size: 13.5px; }
+.snapshot-row small { color: var(--muted); font-size: 12px; }
+.snapshot-row .ghost-button { padding: 8px 12px; font-size: 12px; white-space: nowrap; }
+.form-error-admin { margin: 12px 0 0; padding: 11px 14px; border-left: 3px solid var(--rust); background: #f7e6e1; color: #7a2f22; border-radius: 0 10px 10px 0; font-size: 13px; }
+
+@media (max-width: 760px) {
+  .sync-status { width: 40px; padding: 0; justify-content: center; }
+  .sync-status .sync-text { display: none; }
+  .cloud-banner { flex-direction: column; align-items: flex-start; }
+  .snapshot-row { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.brand img { width: auto !important; height: 50px !important; object-fit: contain !important; background: none !important; border-radius: 0 !important; mix-blend-mode: normal !important; padding: 0 !important; }
+.snapshot-row > div { min-width: 0; flex: 1; }
+.snapshot-row small { display: block; margin-top: 2px; line-height: 1.35; }

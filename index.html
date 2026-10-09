@@ -11,13 +11,13 @@
   <title>Gestión Villa il Fanale</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <button class="brand" data-route="inicio" aria-label="Ir al inicio">
-        <img src="assets/farol.png" alt="Farol de Villa il Fanale">
+        <img src="assets/farol-claro.png" alt="Farol de Villa il Fanale">
         <span><b>VILLA IL FANALE</b><small>Gestión del loft serrano</small></span>
       </button>
       <nav id="desktop-nav" aria-label="Navegación principal"></nav>
@@ -34,6 +34,7 @@
           <h1 id="page-title">Buen día, Juan</h1>
         </div>
         <div class="top-actions">
+          <button class="sync-status local" id="sync-status" type="button" aria-live="polite"><span class="sync-dot"></span><span class="sync-text">Guardado</span></button>
           <button class="icon-button" id="import-calendar" title="Importar calendario" aria-label="Importar calendario">⇩</button>
           <button class="primary-button" id="quick-add">＋ Cargar reserva</button>
         </div>
@@ -46,6 +47,6 @@
   <div id="modal-root"></div>
   <div id="toast-root" aria-live="polite"></div>
   <input type="file" id="calendar-file" accept=".ics,text/calendar" hidden>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
