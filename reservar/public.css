@@ -259,3 +259,8 @@ html.is-preview .whatsapp-float,html.is-preview .mobile-reserve{display:none}
 .booking-copy>*{max-width:520px}
 @media(min-width:901px){.booking-copy{position:sticky;top:0;align-self:start;min-height:100svh}}
 @media(max-width:580px){.booking-copy{padding-bottom:50px}}
+
+/* Video de fondo en la portada */
+.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.2s ease}
+.hero-video.on{opacity:1}
+@media(prefers-reduced-motion:reduce){.hero-video{display:none}}

@@ -427,3 +427,7 @@ if (new URLSearchParams(location.search).has('preview')) document.documentElemen
   const update = () => { const r = target.getBoundingClientRect(); bar.classList.toggle('visible', window.scrollY > window.innerHeight * 0.8 && (r.top > window.innerHeight || r.bottom < 0)); };
   window.addEventListener('scroll', update, { passive: true }); update();
 })();
+
+
+/* Video de portada: arranca solo (sin sonido) y se muestra recién cuando empieza a reproducirse */
+(() => { const v = document.getElementById('hero-video'); if (!v) return; v.muted = true; v.addEventListener('playing', () => v.classList.add('on')); const go = () => { const p = v.play(); if (p && p.catch) p.catch(() => {}); }; go(); document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); }); })();
