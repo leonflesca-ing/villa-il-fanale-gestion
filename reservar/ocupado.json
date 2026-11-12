@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-12T13:16:34.599Z",
+  "updatedAt": "2026-11-12T13:18:39.249Z",
   "ranges": [
     {
       "id": "mwdkgk6br7xy0",
@@ -11,6 +11,12 @@
       "id": "mwdknfglnyb20",
       "start": "2026-11-20",
       "end": "2026-11-23",
+      "source": "Directa"
+    },
+    {
+      "id": "mwdkq3n22udq8",
+      "start": "2026-12-31",
+      "end": "2027-01-03",
       "source": "Directa"
     }
   ]
