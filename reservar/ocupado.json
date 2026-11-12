@@ -1,4 +1,11 @@
 {
-  "updatedAt": "2026-10-14T01:56:50.294Z",
-  "ranges": []
+  "updatedAt": "2026-11-12T13:11:14.118Z",
+  "ranges": [
+    {
+      "id": "mwdkgk6br7xy0",
+      "start": "2026-11-13",
+      "end": "2026-11-15",
+      "source": "Booking.com"
+    }
+  ]
 }
