@@ -30,7 +30,7 @@
   "detailsEyebrow": "TODO LO NECESARIO",
   "detailsTitle": "Preparada para",
   "detailsSubtitle": "disfrutarla.",
-  "amenity1Title": "Hasta 5 personas",
+  "amenity1Title": "Hasta 4 personas",
   "amenity1Description": "Una cama matrimonial y tres individuales.",
   "amenity2Title": "Cocina equipada",
   "amenity2Description": "Cocina a gas, heladera, microondas y vajilla completa.",
@@ -67,7 +67,7 @@
   "bookingEyebrow": "TU PRÓXIMA ESCAPADA",
   "bookingTitle": "Reservá directo.",
   "bookingDescription": "Elegí tus fechas en el calendario y mirá el precio exacto al instante. Te confirmamos por WhatsApp y la reserva queda firme con la seña.",
-  "bookingImage": "../assets/frente.png",
+  "bookingImage": "../assets/fanale-05.jpg",
   "footerLocation": "Alpa Corral · Córdoba · Argentina",
   "regularNight": 75000,
   "highNight": 80000,
@@ -94,11 +94,6 @@
       "caption": "Galería"
     },
     {
-      "id": "gallery-5",
-      "image": "../assets/pagina-galleryItem-gallery-5-1791517973978.jpg",
-      "caption": "Rincones con historia"
-    },
-    {
       "id": "mqvr5kkoe9cva",
       "image": "../assets/pagina-galleryItem-mqvr5kkoe9cva-1791517975821.jpg",
       "caption": "Loft"
@@ -117,6 +112,56 @@
       "id": "mv0ezsqqo06j8",
       "image": "../assets/pagina-galleryItem-mv0ezsqqo06j8-1791517979815.jpg",
       "caption": "."
+    },
+    {
+      "id": "nueva-01",
+      "image": "../assets/fanale-01.jpg",
+      "caption": "Camas individuales"
+    },
+    {
+      "id": "nueva-02",
+      "image": "../assets/fanale-02.jpg",
+      "caption": "Sillón y máscaras"
+    },
+    {
+      "id": "nueva-03",
+      "image": "../assets/fanale-03.jpg",
+      "caption": "Comedor y altillo"
+    },
+    {
+      "id": "nueva-04",
+      "image": "../assets/fanale-04.jpg",
+      "caption": "Mesa y escalera"
+    },
+    {
+      "id": "nueva-05",
+      "image": "../assets/fanale-05.jpg",
+      "caption": "Vista del loft"
+    },
+    {
+      "id": "nueva-06",
+      "image": "../assets/fanale-06.jpg",
+      "caption": "Dormitorio de camas individuales"
+    },
+    {
+      "id": "nueva-07",
+      "image": "../assets/fanale-07.jpg",
+      "caption": "Sala de estar"
+    },
+    {
+      "id": "nueva-08",
+      "image": "../assets/fanale-08.jpg",
+      "caption": "Rincón de la sala"
+    },
+    {
+      "id": "nueva-09",
+      "image": "../assets/fanale-09.jpg",
+      "caption": "Sala y ventanales"
+    },
+    {
+      "id": "nueva-10",
+      "image": "../assets/fanale-10.jpg",
+      "caption": "Hamaca en la galería"
     }
   ],
   "depositPercent": 50,

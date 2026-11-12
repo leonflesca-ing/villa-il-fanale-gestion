@@ -253,3 +253,9 @@ html.is-preview .whatsapp-float,html.is-preview .mobile-reserve{display:none}
 .guest-step .public-check{display:flex!important}
 .cal-month h4{text-transform:none}.cal-month h4::first-letter{text-transform:uppercase}
 .hero-buttons{margin-top:26px}
+
+/* Reservá directo: sin foto, el texto queda fijo mientras se recorre el calendario */
+.booking-copy{padding-bottom:110px}
+.booking-copy>*{max-width:520px}
+@media(min-width:901px){.booking-copy{position:sticky;top:0;align-self:start;min-height:100svh}}
+@media(max-width:580px){.booking-copy{padding-bottom:50px}}
