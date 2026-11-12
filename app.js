@@ -1020,6 +1020,7 @@ function openReservationModal(lead=null, existing=null) {
     <label class="field booking-only"><span>N° de reserva de Booking</span><input name="bookingRef" type="text" placeholder="Ej.: 6634934028" value="${esc(existing?.bookingRef||'')}"></label>
     ${selectField('Moneda','currency',['USD','ARS'],['Dólares (US$)','Pesos ($)'],existing ? rCur(existing) : 'USD')}
     <label class="field"><span>Precio total acordado</span><input name="total" type="number" step="any" min="0" placeholder="Importe total" required value="${esc(existing?.total ?? suggestedTotal)}"></label>
+    <label class="field booking-only usd-only"><span>Impuesto de Booking en US$ (vacío = 10%)</span><input name="tax" type="number" step="any" min="0" placeholder="Ej.: 11" value="${esc(existing?.tax ?? '')}"></label>
     <label class="field"><span>Seña / pago recibido</span><input name="paid" type="number" step="any" min="0" placeholder="0 si se cobra todo al ingresar" value="${esc(existing?.paid ?? '')}"></label>
     <label class="field usd-only"><span>Tipo de cambio (opcional)</span><input name="exchangeRate" type="number" step="any" min="0" placeholder="Ej.: 1522,73" value="${esc(existing?.exchangeRate||'')}"></label>
     <label class="field usd-only"><span>Equivalente en pesos (opcional)</span><input name="arsEquivalent" type="number" step="any" min="0" placeholder="Ej.: 201000" value="${esc(existing?.arsEquivalent||'')}"></label>
@@ -1046,7 +1047,7 @@ function openReservationModal(lead=null, existing=null) {
   form.elements.arsEquivalent.addEventListener('input', () => linkRate('ars'));
   form.elements.exchangeRate.addEventListener('input', () => linkRate('rate'));
   form.elements.total.addEventListener('input', () => linkRate('total'));
-  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout,existing?.id)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid||0); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout); data.currency=data.currency==='USD'?'USD':'ARS'; data.exchangeRate=data.currency==='USD'?Number(data.exchangeRate||0):0; data.arsEquivalent=data.currency==='USD'?Number(data.arsEquivalent||0):0; if(data.channel!=='Booking.com') data.bookingRef=''; delete data.depositConfirmed;
+  form.addEventListener('submit',event=>{ event.preventDefault(); const data=Object.fromEntries(new FormData(form)); if(!validDates(data.checkin,data.checkout)) return toast('Revisá las fechas'); if(!checkAvailability(data.checkin,data.checkout,existing?.id)) return toast('Esas fechas ya están ocupadas o bloqueadas'); data.guests=Number(data.guests); data.total=Number(data.total); data.paid=Number(data.paid||0); data.guarantee=Number(data.guarantee||0); data.nights=nightCount(data.checkin,data.checkout); data.currency=data.currency==='USD'?'USD':'ARS'; data.exchangeRate=data.currency==='USD'?Number(data.exchangeRate||0):0; data.arsEquivalent=data.currency==='USD'?Number(data.arsEquivalent||0):0; if(data.channel!=='Booking.com') data.bookingRef=''; data.tax=(data.channel==='Booking.com'&&data.currency==='USD'&&data.tax!==''&&data.tax!=null)?Number(data.tax):''; delete data.depositConfirmed;
     if(data.paid>data.total) return toast('El pago recibido no puede superar el total');
     if(existing){
       const oldPaid=Number(existing.paid||0), delta=data.paid-oldPaid;
@@ -1242,11 +1243,18 @@ function assistantReply(text){
 }
 
 function printReceipt(r){
-  const cur = rCur(r); const balance = Number(r.total) - Number(r.paid || 0);
-  const nightly = r.nights ? Number(r.total) / r.nights : Number(r.total);
+  const cur = rCur(r);
+  const isBk = r.channel === 'Booking.com' && cur === 'USD';
+  const subtotal = Number(r.total);
+  const tax = isBk ? (r.tax !== '' && r.tax != null ? Number(r.tax) : Math.round(subtotal * 10) / 100) : 0;
+  const grand = subtotal + tax;
+  const balance = grand - Number(r.paid || 0);
+  const nightly = r.nights ? subtotal / r.nights : subtotal;
   const longDate = v => new Intl.DateTimeFormat('es-AR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(`${v}T12:00:00`));
-  const nightsRows = datesBetween(r.checkin, r.checkout).map(d => `<tr><td>Noche del ${dateLabel(d)} al ${dateLabel(plusDay(d))}</td><td class="num">${money(nightly, cur)}</td></tr>`).join('');
   const rate = r.exchangeRate || (r.arsEquivalent && r.total ? r.arsEquivalent / r.total : 0);
+  const pesos = v => rate ? money(Math.round(Number(v) * rate)) : '';
+  const bkCols = isBk && rate;
+  const nightsRows = datesBetween(r.checkin, r.checkout).map(d => `<tr><td>Noche del ${dateLabel(d)} al ${dateLabel(plusDay(d))}</td><td class="num">${money(nightly, cur)}</td>${bkCols?`<td class="num pes">${pesos(nightly)}</td>`:''}</tr>`).join('');
   const owner = state.settings.owner || 'Villa il Fanale';
   const phone = state.settings.phone || '358 484 9524';
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Comprobante ${esc(r.receipt)} · ${esc(r.guest)}</title>
@@ -1260,7 +1268,7 @@ function printReceipt(r){
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 18px;margin:20px 0;padding:16px 0;border-top:1px solid #ccc;border-bottom:1px solid #ccc}
 .k{display:block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:3px}.v{font-size:14px;font-weight:600}.s{color:#555;font-size:11.5px}
 table{width:100%;border-collapse:collapse;margin-top:6px}th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#666;text-align:left;padding:6px 0;border-bottom:1px solid #ccc}
-td{padding:9px 0;border-bottom:1px solid #e3e3e3}.num{text-align:right;white-space:nowrap}
+td{padding:9px 0;border-bottom:1px solid #e3e3e3}.num{text-align:right;white-space:nowrap}.pes{color:#444;padding-left:18px}.sub td{border-top:1.5px solid #111}.tot-ars{font-size:14px;font-weight:400;color:#444;margin-left:8px}
 .total{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:12px 16px;border:1.5px solid #111}.total b{font-size:13px;letter-spacing:.06em}.total strong{font-size:22px}
 .lines{margin-top:12px}.lines div{display:flex;justify-content:space-between;padding:4px 0;color:#333}
 .note{margin-top:22px;padding-top:12px;border-top:1px solid #ccc;font-size:11.5px;color:#444}
@@ -1277,16 +1285,18 @@ td{padding:9px 0;border-bottom:1px solid #e3e3e3}.num{text-align:right;white-spa
 <div><span class="k">Check-out</span><span class="v">${longDate(r.checkout)}</span><div class="s">hasta las ${esc(state.settings.checkout||'10:00')} hs</div></div>
 <div><span class="k">Estadía</span><span class="v">${r.nights} noche${r.nights===1?'':'s'}</span><div class="s">Alojamiento completo</div></div>
 </div>
-<table><thead><tr><th>Detalle</th><th class="num">Importe</th></tr></thead><tbody>${nightsRows}</tbody></table>
-<div class="total"><b>TOTAL DE LA ESTADÍA</b><strong>${money(r.total, cur)}</strong></div>
+<table><thead><tr><th>Detalle</th><th class="num">${cur==='USD'?'Importe (US$)':'Importe'}</th>${bkCols?'<th class="num">Pesos aprox.</th>':''}</tr></thead><tbody>${nightsRows}
+${isBk?`<tr class="sub"><td><b>Subtotal alojamiento</b></td><td class="num"><b>${money(subtotal,'USD')}</b></td>${bkCols?`<td class="num pes"><b>${pesos(subtotal)}</b></td>`:''}</tr>
+<tr><td>Impuesto municipal 10% (Booking.com)</td><td class="num">${money(tax,'USD')}</td>${bkCols?`<td class="num pes">${pesos(tax)}</td>`:''}</tr>`:''}</tbody></table>
+<div class="total"><b>TOTAL DE LA ESTADÍA${isBk?' (con impuesto)':''}</b><strong>${money(grand, cur)}${bkCols?` <span class="tot-ars">≈ ${pesos(grand)}</span>`:''}</strong></div>
 <div class="lines">
 ${Number(r.paid)>0?`<div><span>Pagado a cuenta</span><span>${money(r.paid, cur)}</span></div>`:''}
-<div><span><b>${balance>0?'Saldo a abonar al ingresar':'Saldo'}</b></span><span><b>${money(balance, cur)}</b></span></div>
-${cur==='USD'&&r.arsEquivalent?`<div><span>Equivalente en pesos argentinos${r.channel==='Booking.com'?' (según Booking.com)':''}</span><span>${money(r.arsEquivalent)}</span></div>`:''}
-${cur==='USD'&&rate?`<div class="s"><span>Tipo de cambio de referencia</span><span>US$ 1 = $ ${new Intl.NumberFormat('es-AR',{maximumFractionDigits:2}).format(rate)}</span></div>`:''}
+<div><span><b>${balance>0?'Saldo a abonar al ingresar':'Saldo'}</b></span><span><b>${money(balance, cur)}</b>${bkCols&&balance>0?` <small>≈ ${pesos(balance)}</small>`:''}</span></div>
+${cur==='USD'&&r.arsEquivalent&&!isBk?`<div><span>Equivalente en pesos argentinos</span><span>${money(r.arsEquivalent)}</span></div>`:''}
+${cur==='USD'&&rate?`<div class="s"><span>Tipo de cambio${r.channel==='Booking.com'?' según Booking.com al reservar':' de referencia'}</span><span>US$ 1 = $ ${new Intl.NumberFormat('es-AR',{maximumFractionDigits:2}).format(rate)}</span></div>`:''}
 ${Number(r.guarantee)>0?`<div><span>Depósito de garantía (reintegrable al check-out)</span><span>${money(r.guarantee, cur)}</span></div>`:''}
 </div>
-<div class="note">${cur==='USD'?'El pago en el ingreso se realiza al valor del dólar del día. ':''}Gracias por respetar las normas de la casa.</div>
+<div class="note">${bkCols?'Importes en dólares. El equivalente en pesos es aproximado y corresponde al tipo de cambio que mostró Booking.com al momento de la reserva. ':cur==='USD'?'El pago en el ingreso se realiza al valor del dólar del día. ':''}Gracias por respetar las normas de la casa.</div>
 <div class="foot"><i>¡Gracias por elegirnos! Que disfruten la tranquilidad serrana.</i>${esc(owner)} · ${esc(phone)} · Instagram @villailfanale</div>
 <button class="print" onclick="window.print()">Imprimir</button>
 </div><script>setTimeout(()=>window.print(),350)<\/script></body></html>`;
