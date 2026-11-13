@@ -429,5 +429,14 @@ if (new URLSearchParams(location.search).has('preview')) document.documentElemen
 })();
 
 
-/* Video de portada: arranca solo (sin sonido) y se muestra recién cuando empieza a reproducirse */
-(() => { const v = document.getElementById('hero-video'); if (!v) return; v.muted = true; v.addEventListener('playing', () => v.classList.add('on')); const go = () => { const p = v.play(); if (p && p.catch) p.catch(() => {}); }; go(); document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); }); })();
+/* Video de portada: 1080p en pantallas grandes, 720p (más liviano) en celulares o con ahorro de datos; arranca solo y sin sonido */
+(() => {
+  const v = document.getElementById('hero-video'); if (!v) return;
+  const small = window.innerWidth < 900 || (navigator.connection && navigator.connection.saveData);
+  v.muted = true;
+  v.src = small ? '../assets/portada-720.mp4' : '../assets/portada-1080.mp4';
+  v.addEventListener('playing', () => v.classList.add('on'));
+  const go = () => { const p = v.play(); if (p && p.catch) p.catch(() => {}); };
+  go();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); });
+})();
