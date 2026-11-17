@@ -1,6 +1,12 @@
 {
-  "updatedAt": "2026-11-17T19:02:57.188Z",
+  "updatedAt": "2026-11-17T19:06:25.808Z",
   "ranges": [
+    {
+      "id": "mwl2clppby6nm",
+      "start": "2026-11-17",
+      "end": "2026-11-19",
+      "source": "Directa"
+    },
     {
       "id": "mwdknfglnyb20",
       "start": "2026-11-20",
