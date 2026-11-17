@@ -1,23 +1,4 @@
 {
-  "updatedAt": "2026-11-17T19:25:11.135Z",
-  "ranges": [
-    {
-      "id": "mwdknfglnyb20",
-      "start": "2026-11-20",
-      "end": "2026-11-23",
-      "source": "Directa"
-    },
-    {
-      "id": "mwdkt9rutmab1",
-      "start": "2026-12-11",
-      "end": "2026-12-13",
-      "source": "Booking.com"
-    },
-    {
-      "id": "mwdkq3n22udq8",
-      "start": "2026-12-31",
-      "end": "2027-01-03",
-      "source": "Directa"
-    }
-  ]
+  "updatedAt": "2026-11-17T20:00:54.822Z",
+  "ranges": []
 }
