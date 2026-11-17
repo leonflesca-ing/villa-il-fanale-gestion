@@ -15,6 +15,7 @@ const money = (value, currency = 'ARS') => currency === 'USD'
 const CHANNELS = ['Booking.com','WhatsApp','Airbnb','Instagram','Facebook','Página web','Calendario importado'];
 const rCur = r => (r && r.currency === 'USD') ? 'USD' : 'ARS';
 const dateLabel = value => value ? new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : 'Sin fecha';
+const tvDate = value => value ? new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`)).replace(/\./g,'') : '';
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 
 const defaultState = {
@@ -278,6 +279,7 @@ function handleAction(action, id) {
     whatsapp: () => openWhatsApp(id), deleteLead: () => deleteLead(id),
     details: () => openReservationDetails(id), editReservation: () => openReservationModal(null, state.reservations.find(x => x.id === id)),
     cancelReservation: () => openCancelReservationModal(id), deleteReservation: () => deleteReservation(id),
+    tvShow: () => mostrarEnTv(id), tvClear: () => quitarDeTv(),
     addTask: openTaskModal,
     addMovement: openMovementModal, addInventory: openInventoryModal,
     prevMonth: () => { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); },
@@ -1075,9 +1077,30 @@ function openInventoryModal() {
   openModal('Agregar al inventario', `<form id="inventory-form"><div class="form-grid">${field('Elemento','name','text','Ej.: Copas',true)}${field('Detalle','detail','text','Qué controlar')}${selectField('Estado','status',['hay','poco','falta'],['Hay','Queda poco','Falta'])}</div><div class="form-actions"><button type="button" class="ghost-button" data-close>Cancelar</button><button class="primary-button">Agregar</button></div></form>`);const form=document.querySelector('#inventory-form');form.addEventListener('submit',e=>{e.preventDefault();state.inventory.push({...Object.fromEntries(new FormData(form)),id:uid()});saveState('Elemento agregado');closeModal();render();});bindModal();
 }
 
+async function escribirTv(data, mensaje){
+  const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
+  try {
+    if (!token) throw new Error('Tu sesión de GitHub se cerró. Volvé a ingresar la clave privada.');
+    if (!(await validateAdminToken(token))) throw new Error('La clave de GitHub venció o ya no pertenece a la cuenta propietaria.');
+    await githubPutFile('tv.json', textToBase64(JSON.stringify(data, null, 2) + '\n'), mensaje, token);
+    toast(data.nombre ? `La tele le va a dar la bienvenida a ${data.nombre}.` : 'La tele volvió a "Bienvenidos" (sin huésped).');
+  } catch (error) {
+    if (/Contents|not accessible|permiso/i.test(error.message || '')) showTokenHelp();
+    else toast(error.message || 'No se pudo actualizar la tele.');
+  }
+}
+function mostrarEnTv(id){
+  const r = state.reservations.find(x => x.id === id); if (!r) return;
+  const nombre = String(r.guest || '').trim().split(/\s+/)[0] || '';
+  return escribirTv({ nombre, checkin: tvDate(r.checkin), checkout: tvDate(r.checkout) }, `Mostrar a ${r.guest} en la TV`);
+}
+function quitarDeTv(){
+  return escribirTv({ nombre: '', checkin: '', checkout: '' }, 'Limpiar pantalla de la TV');
+}
+
 function openReservationDetails(id) {
   const r=state.reservations.find(x=>x.id===id); if(!r)return; const cancelled=r.status==='cancelled'; const balance=cancelled?0:Number(r.total)-Number(r.paid||0);
-  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA${r.status==='pending'?' · <span style="color:#a46a00">ESPERANDO SEÑA</span>':''}</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total, rCur(r))}${r.arsEquivalent?` <small class="muted">(≈ ${money(r.arsEquivalent)})</small>`:''}<br>Pagado ${money(cancelled?0:r.paid, rCur(r))}<br><b>Saldo ${money(balance, rCur(r))}</b></p></div>${r.bookingRef?`<div class="field full"><span class="eyebrow">BOOKING.COM</span><p>Reserva N° ${esc(r.bookingRef)}</p></div>`:''}${r.notes?`<div class="field full"><span class="eyebrow">NOTAS</span><p>${esc(r.notes)}</p></div>`:''}<div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button>${r.status==='pending'?`<button class="primary-button" data-action="confirmDeposit" data-id="${r.id}">Registrar seña</button>`:''}${r.phone?`<button class="ghost-button" data-action="whatsappGuest" data-id="${r.id}">WhatsApp</button>`:''}<button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0&&r.status!=='pending'?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
+  openModal(`Reserva de ${esc(r.guest)}`, `${cancelled?'<div class="cancelled-banner"><b>Reserva cancelada</b><span>Las fechas fueron liberadas y los ingresos asociados quedaron anulados.</span></div>':''}<div class="form-grid"><div><span class="eyebrow">ESTADÍA${r.status==='pending'?' · <span style="color:#a46a00">ESPERANDO SEÑA</span>':''}</span><p><b>${dateLabel(r.checkin)} → ${dateLabel(r.checkout)}</b><br>${r.nights} noches · ${r.guests} huéspedes · ${esc(r.channel)}</p></div><div><span class="eyebrow">PAGOS</span><p>Total ${money(r.total, rCur(r))}${r.arsEquivalent?` <small class="muted">(≈ ${money(r.arsEquivalent)})</small>`:''}<br>Pagado ${money(cancelled?0:r.paid, rCur(r))}<br><b>Saldo ${money(balance, rCur(r))}</b></p></div>${r.bookingRef?`<div class="field full"><span class="eyebrow">BOOKING.COM</span><p>Reserva N° ${esc(r.bookingRef)}</p></div>`:''}${r.notes?`<div class="field full"><span class="eyebrow">NOTAS</span><p>${esc(r.notes)}</p></div>`:''}<div class="field full"><span class="eyebrow">DATOS DEL TITULAR</span><p>${esc(r.phone||'Sin teléfono')} · DNI ${esc(r.guestDni||'Sin informar')} · Patente ${esc(r.plate||'Sin informar')}<br>${esc(r.address||'')} ${r.companions?`<br>Acompañantes: ${esc(r.companions)}`:''}</p></div></div><div class="form-actions">${cancelled?`<button class="ghost-button danger" data-action="deleteReservation" data-id="${r.id}">Eliminar historial</button>`:`<button class="ghost-button" data-action="openForm">Formulario</button><button class="ghost-button" data-action="editReservation" data-id="${r.id}">Editar</button><button class="ghost-button danger" data-action="cancelReservation" data-id="${r.id}">Cancelar reserva</button>${r.status==='pending'?`<button class="primary-button" data-action="confirmDeposit" data-id="${r.id}">Registrar seña</button>`:''}${r.phone?`<button class="ghost-button" data-action="whatsappGuest" data-id="${r.id}">WhatsApp</button>`:''}<button class="ghost-button" data-action="tvShow" data-id="${r.id}">Mostrar en la tele</button><button class="ghost-button" data-action="tvClear">Quitar de la tele</button><button class="secondary-button" id="print-receipt">Comprobante</button>${balance>0&&r.status!=='pending'?`<button class="primary-button" id="collect-balance">Registrar saldo</button>`:''}`}</div>`);
   bindModal(); const print=document.querySelector('#print-receipt');if(print)print.addEventListener('click',()=>printReceipt(r)); const collect=document.querySelector('#collect-balance'); if(collect) collect.addEventListener('click',()=>{r.paid=Number(r.total);state.movements.push({id:uid(),type:'income',label:`Saldo · ${r.guest}`,amount:balance,currency:rCur(r),date:todayISO(),reservationId:r.id});saveState('Saldo registrado');closeModal();render();});
 }
 
